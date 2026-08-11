@@ -154,6 +154,16 @@ cmd_discover() {
 # the .md/.zh.md/.i18n.yaml triplet dedupes to one entry.
 ab_note_key() { sed -E 's/\.(zh\.md|i18n\.yaml|md)$//' | awk '{ print $0 ".md" }' | sort -u; }
 
+# ab_resolve_snapshot_ref <ref> — resolve a bare snapshot branch name
+# (snapshots/X, no origin/ prefix) or any existing ref/sha to an existing ref;
+# prints the ref or fails (exit 1).
+ab_resolve_snapshot_ref() {
+  local r="$1"
+  if git -C "$AB_MAIN" rev-parse --verify "$r^{commit}" >/dev/null 2>&1; then printf '%s\n' "$r"; return 0; fi
+  if git -C "$AB_MAIN" rev-parse --verify "refs/remotes/origin/$r^{commit}" >/dev/null 2>&1; then printf 'refs/remotes/origin/%s\n' "$r"; return 0; fi
+  return 1
+}
+
 # ab_notes_changelog <from> <to> [full] — official changelog between two
 # snapshots: the agent notes added in between. The official repo REQUIRES one
 # Agent Note per non-trivial change (`.agents/notes/implemented/<class>/
@@ -188,26 +198,31 @@ cmd_notes() {
   # Official changelog between two snapshots (defaults: running tip -> newest).
   [ -n "$AB_MAIN" ] || ab_die "no main clone resolved"
   git -C "$AB_MAIN" fetch origin 2>&1 | tail -1 || true
-  local from to newest cur_snap cur_tip other_tip from_def=0 to_def=0
+  local from to newest cur_snap cur_tip other_tip from_def=0 to_def=0 to_name
   from="$FLAG_FROM"; to="$FLAG_TO"
   newest=$(ab_snapshot_refs | head -1 || true)
   [ -n "$newest" ] || ab_die "no upstream snapshot branches"
   cur_snap=$(ab_slot_snapshot "$(ab_current_slot)")
   cur_tip=$(ab_slot_tip "$(ab_current_slot)")
   other_tip=$(ab_slot_tip "$(ab_other_slot)")
-  if [ -z "$to" ]; then to=$(ab_snapshot_branch "$newest"); to_def=1; fi
+  if [ -z "$to" ]; then to="$newest"; to_def=1; fi  # full ref (refs/remotes/origin/snapshots/...)
   if [ -z "$from" ]; then
     from_def=1
-    if [ -n "$cur_tip" ]; then from="$cur_tip"; else from=$(ab_snapshot_branch "$(ab_snapshot_refs | tail -1 || true)"); fi
+    if [ -n "$cur_tip" ]; then from="$cur_tip"; else from=$(ab_snapshot_refs | tail -1 || true); fi
   fi
+  to_name=$(ab_snapshot_branch "$to")
   # no new snapshot beyond the running one: show the running pair instead
   # (older/other slot -> current), oldest-first like the diff stat.
-  if [ "$to_def" = "1" ] && [ "$from_def" = "1" ] && [ "$to" = "$cur_snap" ] && [ -n "$other_tip" ]; then
+  if [ "$to_def" = "1" ] && [ "$from_def" = "1" ] && [ "$to_name" = "$cur_snap" ] && [ -n "$other_tip" ]; then
     ab_warn "newest snapshot is the running version — showing the running pair (override with --from/--to)"
-    from="$other_tip"; to="$cur_tip"
+    from="$other_tip"; to="$cur_tip"; to_name=$(ab_snapshot_branch "$to")
   fi
-  git -C "$AB_MAIN" rev-parse --verify "$from^{commit}" >/dev/null 2>&1 || ab_die "unknown from ref: $from"
-  git -C "$AB_MAIN" rev-parse --verify "$to^{commit}" >/dev/null 2>&1 || ab_die "unknown to ref: $to"
+  # resolve bare snapshot branch names (snapshots/X -> refs/remotes/origin/snapshots/X),
+  # then normalize everything to shas so display/diff/json stay consistent
+  from=$(ab_resolve_snapshot_ref "$from") || ab_die "unknown from ref: $from"
+  to=$(ab_resolve_snapshot_ref "$to") || ab_die "unknown to ref: $to"
+  from=$(git -C "$AB_MAIN" rev-parse "$from^{commit}")
+  to=$(git -C "$AB_MAIN" rev-parse "$to^{commit}")
   if [ "$FLAG_JSON" = "1" ]; then
     local keys
     keys=$(git -C "$AB_MAIN" diff --name-only --diff-filter=A "$from" "$to" -- .agents/notes/implemented 2>/dev/null | ab_note_key) || true

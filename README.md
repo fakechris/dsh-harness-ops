@@ -307,8 +307,8 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 - 修复的机制 bug：init 缺完整构建（见场景 H）、stage 缺共存护栏（见场景 E）、冒烟清理残留进程 ✅
 - **20260810 上游声明键改名事故（已修复）**：快照把 client-modules 声明键 `dshClient` 改为
   `dsh.client`，扩展未适配 → host 插件正常、扩展测试全绿、冒烟 200，但 client 面板消失。
-  修复：扩展双键声明（`dshClient` + `dsh.client`）+ 验收门新增 **client-manifest 断言**
-  （`web.smokeClientIds`，解析 `__DSH_BOOT__` 逐 id 校验）✅
+  修复：扩展统一声明新版 `dsh.client` 键（旧键 `dshClient` 不做兼容，旧版随轮换淘汰）+
+  验收门新增 **client-manifest 断言**（`web.smokeClientIds`，解析 `__DSH_BOOT__` 逐 id 校验）✅
 - **面板回归验证（浏览器实测）**：修复后 slot-b 的 `__DSH_BOOT__` 含 `@deepseek-ai/dsh-track`、
   `/plugins/.../client.js` 200、插件 apply() 执行（◆ FAB 与 panel DOM 存在）、点 FAB 面板展开
   且拉到真实数据 ✅

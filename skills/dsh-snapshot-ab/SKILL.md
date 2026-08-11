@@ -59,7 +59,7 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
 5. **不 stash、不硬删**：扩展仓库有未提交 WIP 时照常构建（构建的是工作区内容）；失败只恢复我们改过的东西（relink、tsconfig.ab.json），不动其它文件。
 6. **验收不过不切换**：任何 gate（install/build/扩展测试/web 冒烟）失败即停止，把失败证据报告给用户，绝不带病切换。
 7. **单实例原则**：两个槽可同起（不同端口），但共享 `~/.dsh` sessions/storages——**一个生产实例常驻**；另一个槽只用于验收/临时查看（`stage`/冒烟），检测到已有实例时必须让用户明确确认（`--yes`）后才启动，看完即关、只读不写。
-8. **验收含 client manifest**：冒烟不止 HTTP 200——`web.smokeClientIds` 断言扩展 client 出现在 `window.__DSH_BOOT__`（20260810 快照把声明键 `dshClient` 改为 `dsh.client`，扩展未适配时 host 正常、测试全绿但 client 静默丢失，面板消失——就是这个门抓出来的）。扩展需双键声明（`dshClient` + `dsh.client`）兼容两代快照。
+8. **验收含 client manifest**：冒烟不止 HTTP 200——`web.smokeClientIds` 断言扩展 client 出现在 `window.__DSH_BOOT__`（20260810 快照把声明键 `dshClient` 改为 `dsh.client`，扩展未适配时 host 正常、测试全绿但 client 静默丢失，面板消失——就是这个门抓出来的）。扩展**统一声明新版 `dsh.client` 键**；旧键 `dshClient`（20260809 及更早快照用）不做兼容——旧版确认稳定后随轮换淘汰。
 
 ## 扩展的 DSH_SOURCE 参数化（机制的一部分）
 

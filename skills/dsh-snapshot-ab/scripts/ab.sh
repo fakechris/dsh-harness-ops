@@ -420,9 +420,14 @@ ab_restart_web() {
   cwd=""
   [ -n "$firstpid" ] && cwd=$(lsof -a -p "$firstpid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1) || true
   [ -n "$cwd" ] && [ -d "$cwd" ] || cwd="${AB_MAIN:-$HOME}"
+  # nohup'd dsh web must find `node` on PATH: a bare `dsh` from a non-login
+  # shell fails with "exec: node: not found" (the launcher execs node). Pin the
+  # node bin dir from the current shell and use the resolved launcher path.
+  local node_bin=""
+  command -v node >/dev/null 2>&1 && node_bin=$(dirname "$(command -v node)")
   log="$AB_SOURCE/web.log"
-  ab_log "  starting: nohup dsh web (cwd $cwd, log $log)"
-  ( cd "$cwd" && nohup dsh web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
+  ab_log "  starting: nohup ${AB_LAUNCHER:-dsh} web (cwd $cwd, log $log)"
+  ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup "${AB_LAUNCHER:-dsh}" web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
   i=0; code=000
   while [ "$i" -lt 180 ]; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" 2>/dev/null || echo 000)

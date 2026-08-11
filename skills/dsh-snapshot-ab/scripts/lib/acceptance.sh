@@ -75,6 +75,23 @@ acc_web_smoke() {
     ab_log "  smoke path $p -> HTTP $code"
     [ "$code" = "200" ] || allok=0
   done < <(ab_config_get '.web.smokePaths // ["/"] | .[]')
+  # client-manifest assertion: HTTP 200 alone does not prove the extensions'
+  # client bundles reached the boot manifest — an upstream package.json
+  # declaration-key change (e.g. dshClient -> dsh.client) silently drops the
+  # row from window.__DSH_BOOT__. Check the configured client ids explicitly.
+  local cids cid html
+  cids=$(ab_config_get '.web.smokeClientIds // [] | .[]')
+  if [ -n "$cids" ]; then
+    html=$(curl -s --max-time 10 "http://$host:$port/" 2>/dev/null || true)
+    for cid in $cids; do
+      if printf '%s' "$html" | grep -q "\"id\":\"$cid\""; then
+        ab_ok "  client manifest: $cid present"
+      else
+        ab_err "  client manifest: $cid MISSING (upstream declaration change or extension not attached)"
+        allok=0
+      fi
+    done
+  fi
   if [ "$keep" = "1" ]; then
     ab_log "keeping staging server on http://$host:$port (pid $pid, log $log) for manual review"
   else

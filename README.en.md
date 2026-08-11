@@ -33,7 +33,7 @@ English | [中文](README.md)
 ```
 dsh-harness-ops (this repo)
 ├── skills/dsh-snapshot-ab/        AB rotation: official snapshots in A/B dual slots, old version kept as fallback, atomic switch after acceptance
-│   └── scripts/ab.sh              main command (status/discover/prepare/verify/switch/confirm/rollback)
+│   └── scripts/ab.sh              main command (status/discover/notes/prepare/verify/switch/confirm/rollback)
 ├── skills/dsh-web-guard/          self-healing guard: launchd/systemd hosted, brings web up within 10s of a free port
 │   └── scripts/install.sh         cross-platform install (macOS launchd / Linux systemd)
 ├── skills/dsh-session-recovery/   session-loss diagnosis: 0 sessions/corrupted logs → locate → lossless repair → restart
@@ -152,6 +152,9 @@ $AB status                 # who is in production, phase, extension dirty-file c
 
 # 2) See what the official shipped today
 $AB discover               # fetch upstream → list snapshot branches → point out the next candidate + diff summary vs current
+                           # + official changelog (when the candidate is newer: agent notes added, the official "why")
+$AB notes                  # standalone changelog: default running tip → newest; shows the running pair when up to date
+                           # --full prints note bodies; --json pure JSON
                            # output like: next candidate: snapshots/20260810T155924Z-8ec407cd64
 
 # 3) Build in the "non-current" slot + mount extensions + smoke (never touches production)
@@ -334,7 +337,8 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 | Command | What it does | What it touches |
 |---|---|---|
 | `$AB status` | layout/slots/phase/running web/extension dirty files | read-only |
-| `$AB discover` | fetch upstream, list snapshots, compute candidate, diff summary | fetch only |
+| `$AB discover` | fetch upstream, list snapshots, compute candidate, diff summary; official changelog (added agent notes) when the candidate is newer | fetch only |
+| `$AB notes [--from\|--to] [--full] [--json]` | official changelog between two snapshots (agent notes added under `.agents/notes/implemented`; default running tip → newest) | fetch only |
 | `$AB init --yes` | adopt the current version as slot-a (worktree+install+**full build**), no restart | current |
 | `$AB prepare [--slot a\|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]` | full candidate-slot pipeline (build+extensions+smoke), no production impact | candidate slot only |
 | `$AB verify` | rerun extension tests + smoke against the prepared candidate | read-only |

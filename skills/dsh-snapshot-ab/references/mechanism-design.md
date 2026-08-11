@@ -96,7 +96,8 @@ refs/heads/dsh-staging/20260809T141636Z             ← 官方 staging（含后�
 | 命令 | 作用 | 改什么 |
 |---|---|---|
 | `status` | 布局/槽/phase/运行中 web/扩展脏文件 | 只读 |
-| `discover` | fetch 上游、列快照、算候选、diff stat | 只 fetch |
+| `discover` | fetch 上游、列快照、算候选、diff stat；候选比当前新时附官方 changelog（新增 agent notes） | 只 fetch |
+| `notes [--from \|--to <ref>] [--full] [--json]` | 打印两个快照间的官方 changelog（`.agents/notes/implemented` 新增笔记；默认 运行 tip → 最新，无新快照时显示当前运行对） | 只 fetch |
 | `init --yes` | 把当前运行版本收编为 slot-a（新 worktree + 装依赖 + **完整构建** build:lib+build:web + 重指 current，**不重启**） | current |
 | `prepare [--slot a\|b]` | 候选槽：检出快照 → install → build → 扩展挂接构建测试 → 冒烟（3081） | 仅候选槽 |
 | `verify` | 对 prepared 候选重跑扩展测试 + 冒烟 | 只读 |

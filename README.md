@@ -28,7 +28,7 @@
 ```
 dsh-harness-ops（本仓库）
 ├── skills/dsh-snapshot-ab/        AB 轮换：官方快照 A/B 双槽，旧版保底、验收后原子切换
-│   └── scripts/ab.sh              主命令（status/discover/prepare/verify/switch/confirm/rollback）
+│   └── scripts/ab.sh              主命令（status/discover/notes/prepare/verify/switch/confirm/rollback）
 ├── skills/dsh-web-guard/          自愈守护：launchd/systemd 托管，端口空闲 10s 内拉起 web
 │   └── scripts/install.sh         跨平台安装（macOS launchd / Linux systemd）
 ├── skills/dsh-session-recovery/  会话丢失诊断：0 sessions/日志损坏 → 定位 → 无损修复 → 重启
@@ -139,7 +139,10 @@ $AB status                 # 谁在生产、phase、扩展脏文件数
 
 # 2) 看官方今天发了什么
 $AB discover               # fetch 上游 → 列出快照分支 → 指出下一个候选 + 与当前的 diff 摘要
+                           # + 官方 changelog（候选更新时：新增的 agent notes，即官方"为什么"）
                            # 输出类似：next candidate: snapshots/20260810T155924Z-8ec407cd64
+$AB notes                  # 单独打印 changelog：默认 运行 tip → 最新；无新快照时显示当前运行对
+                           # --full 连笔记正文；--json 纯 JSON
 
 # 3) 在"非当前槽"构建 + 挂扩展 + 冒烟（全程不动生产）
 $AB prepare                # 自动选非当前槽；也可显式 --slot b / --snapshot <ref>
@@ -307,7 +310,8 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 | 命令 | 作用 | 动什么 |
 |---|---|---|
 | `$AB status` | 布局/槽/phase/运行中 web/扩展脏文件 | 只读 |
-| `$AB discover` | fetch 上游、列快照、算候选、diff 摘要 | 只 fetch |
+| `$AB discover` | fetch 上游、列快照、算候选、diff 摘要；候选更新时附官方 changelog（新增 agent notes） | 只 fetch |
+| `$AB notes [--from\|--to] [--full] [--json]` | 两个快照间的官方 changelog（`.agents/notes/implemented` 新增笔记；默认 运行 tip → 最新） | 只 fetch |
 | `$AB init --yes` | 收编当前版本为 slot-a（worktree+install+**完整构建**），不重启 | current |
 | `$AB prepare [--slot a\|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]` | 候选槽全流水线（构建+扩展+冒烟），不动生产 | 仅候选槽 |
 | `$AB verify` | 对 prepared 候选重跑扩展测试+冒烟 | 只读 |

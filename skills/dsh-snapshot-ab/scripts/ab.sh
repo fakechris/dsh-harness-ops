@@ -9,6 +9,11 @@
 # Commands:
 #   status                       print layout, slots, phase, running server
 #   discover [--json]            fetch upstream, list snapshot branches, diff
+#                                stat + official changelog (added agent notes)
+#   notes [--from <ref>] [--to <ref>] [--full] [--json]
+#                                official changelog between two snapshots: the
+#                                agent notes (.agents/notes/implemented) added
+#                                in between (defaults: running tip -> newest)
 #   init [--yes]                 adopt the running version as slot-a (no restart)
 #   prepare [--slot a|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]
 #                                build+verify the next snapshot in the other slot
@@ -43,15 +48,19 @@ CMD="${1:-help}"
 shift || true
 
 FLAG_SLOT=""; FLAG_SNAPSHOT=""; FLAG_PORT=""; FLAG_SKIP_WEB=0; FLAG_KEEP=0; FLAG_FORCE=0; FLAG_YES=0; FLAG_JSON=0
+FLAG_FROM=""; FLAG_TO=""; FLAG_FULL=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --slot) FLAG_SLOT="${2:-}"; shift 2 ;;
     --snapshot) FLAG_SNAPSHOT="${2:-}"; shift 2 ;;
     --port) FLAG_PORT="${2:-}"; shift 2 ;;
+    --from) FLAG_FROM="${2:-}"; shift 2 ;;
+    --to) FLAG_TO="${2:-}"; shift 2 ;;
     --skip-web) FLAG_SKIP_WEB=1; shift ;;
     --keep) FLAG_KEEP=1; shift ;;
     --force) FLAG_FORCE=1; shift ;;
     --yes) FLAG_YES=1; shift ;;
+    --full) FLAG_FULL=1; shift ;;
     --json) FLAG_JSON=1; shift ;;
     *) ab_die "unknown argument: $1 (see: ab.sh help)" ;;
   esac
@@ -121,13 +130,94 @@ cmd_discover() {
       local from to
       from=$(ab_slot_tip "$(ab_current_slot)")
       to=$(git -C "$AB_MAIN" rev-parse "$cand")
-      [ -n "$from" ] && ab_log "diff stat vs current (${from:0:8} -> ${to:0:8}):" \
-        && git -C "$AB_MAIN" diff --stat "$from" "$to" | tail -15
+      if [ -n "$from" ]; then
+        ab_log "diff stat vs current (${from:0:8} -> ${to:0:8}):" \
+          && git -C "$AB_MAIN" diff --stat "$from" "$to" | tail -15
+        # the notes changelog only reads forward; show it for the normal daily
+        # case (candidate NEWER than current), not for an older leftover
+        local cand_ts cur_ts
+        cand_ts=$(printf '%s' "$(ab_snapshot_branch "$cand")" | sed -E 's/.*([0-9]{8}T[0-9]{6}Z).*/\1/')
+        cur_ts=$(printf '%s' "$cur_snap" | sed -E 's/.*([0-9]{8}T[0-9]{6}Z).*/\1/')
+        if [ -n "$cand_ts" ] && [ -n "$cur_ts" ] && [ "$cand_ts" \> "$cur_ts" ]; then
+          ab_log "official changelog (added agent notes) ${from:0:8} -> ${to:0:8}:"
+          ab_notes_changelog "$from" "$to" 0
+        fi
+      fi
     fi
   else
     ab_log "no new snapshot beyond the two slots (up to date)"
   fi
   if [ "$FLAG_JSON" = "1" ]; then printf '%s\n' "$refs" | sed 's#^refs/remotes/origin/##' | jq -R . | jq -s .; fi
+}
+
+# ab_note_key — normalize an agent-note path to its canonical English .md key so
+# the .md/.zh.md/.i18n.yaml triplet dedupes to one entry.
+ab_note_key() { sed -E 's/\.(zh\.md|i18n\.yaml|md)$//' | awk '{ print $0 ".md" }' | sort -u; }
+
+# ab_notes_changelog <from> <to> [full] — official changelog between two
+# snapshots: the agent notes added in between. The official repo REQUIRES one
+# Agent Note per non-trivial change (`.agents/notes/implemented/<class>/
+# yyyy-mm-dd-<topic>.md` + .zh.md + .i18n.yaml, each with Problem/Decision/
+# Consequences/Alternatives), so the notes ADDED between two snapshots are the
+# official changelog for that pair. Triplets are deduped to the English .md.
+ab_notes_changelog() {
+  local from="$1" to="$2" full="${3:-0}"
+  [ -n "$from" ] && [ -n "$to" ] || ab_die "notes: need both from and to"
+  local keys mods dels props rejs
+  keys=$(git -C "$AB_MAIN" diff --name-only --diff-filter=A "$from" "$to" -- .agents/notes/implemented 2>/dev/null | ab_note_key) || true
+  mods=$(git -C "$AB_MAIN" diff --name-only --diff-filter=M "$from" "$to" -- .agents/notes/implemented 2>/dev/null | ab_note_key | wc -l | tr -d ' ') || true
+  dels=$(git -C "$AB_MAIN" diff --name-only --diff-filter=D "$from" "$to" -- .agents/notes/implemented 2>/dev/null | ab_note_key | wc -l | tr -d ' ') || true
+  props=$(git -C "$AB_MAIN" diff --name-only --diff-filter=A "$from" "$to" -- .agents/notes/proposed 2>/dev/null | ab_note_key | wc -l | tr -d ' ') || true
+  rejs=$(git -C "$AB_MAIN" diff --name-only --diff-filter=A "$from" "$to" -- .agents/notes/rejected 2>/dev/null | ab_note_key | wc -l | tr -d ' ') || true
+  local n=0 key cls date_title title
+  while IFS= read -r key; do
+    [ -n "$key" ] || continue
+    n=$((n+1))
+    cls=$(printf '%s' "$key" | sed -E 's#\.agents/notes/implemented/([^/]+)/.*#\1#')
+    date_title=$(printf '%s' "$key" | sed -E 's#.*/([0-9]{4}-[0-9]{2}-[0-9]{2}-[^/]+)\.md$#\1#')
+    title=$(git -C "$AB_MAIN" show "$to:$key" 2>/dev/null | sed -n '1s/^# Agent Note: //p') || true
+    ab_log "  $cls  $date_title${title:+  —  $title}"
+    if [ "$full" = "1" ]; then
+      git -C "$AB_MAIN" show "$to:$key" 2>/dev/null | sed 's/^/       /' || true
+    fi
+  done <<< "$keys"
+  ab_log "notes added: $n, modified: $mods, removed: $dels (implemented); proposed +$props, rejected +$rejs"
+}
+
+cmd_notes() {
+  # Official changelog between two snapshots (defaults: running tip -> newest).
+  [ -n "$AB_MAIN" ] || ab_die "no main clone resolved"
+  git -C "$AB_MAIN" fetch origin 2>&1 | tail -1 || true
+  local from to newest cur_snap cur_tip other_tip from_def=0 to_def=0
+  from="$FLAG_FROM"; to="$FLAG_TO"
+  newest=$(ab_snapshot_refs | head -1 || true)
+  [ -n "$newest" ] || ab_die "no upstream snapshot branches"
+  cur_snap=$(ab_slot_snapshot "$(ab_current_slot)")
+  cur_tip=$(ab_slot_tip "$(ab_current_slot)")
+  other_tip=$(ab_slot_tip "$(ab_other_slot)")
+  if [ -z "$to" ]; then to=$(ab_snapshot_branch "$newest"); to_def=1; fi
+  if [ -z "$from" ]; then
+    from_def=1
+    if [ -n "$cur_tip" ]; then from="$cur_tip"; else from=$(ab_snapshot_branch "$(ab_snapshot_refs | tail -1 || true)"); fi
+  fi
+  # no new snapshot beyond the running one: show the running pair instead
+  # (older/other slot -> current), oldest-first like the diff stat.
+  if [ "$to_def" = "1" ] && [ "$from_def" = "1" ] && [ "$to" = "$cur_snap" ] && [ -n "$other_tip" ]; then
+    ab_warn "newest snapshot is the running version — showing the running pair (override with --from/--to)"
+    from="$other_tip"; to="$cur_tip"
+  fi
+  git -C "$AB_MAIN" rev-parse --verify "$from^{commit}" >/dev/null 2>&1 || ab_die "unknown from ref: $from"
+  git -C "$AB_MAIN" rev-parse --verify "$to^{commit}" >/dev/null 2>&1 || ab_die "unknown to ref: $to"
+  if [ "$FLAG_JSON" = "1" ]; then
+    local keys
+    keys=$(git -C "$AB_MAIN" diff --name-only --diff-filter=A "$from" "$to" -- .agents/notes/implemented 2>/dev/null | ab_note_key) || true
+    jq -n --arg from "$from" --arg to "$to" \
+      --argjson added "$(printf '%s' "$keys" | jq -R -s 'split("\n") | map(select(length > 0))')" \
+      '{ from: $from, to: $to, added: $added }'
+    return 0
+  fi
+  ab_log "official changelog (agent notes) ${from:0:8} -> ${to:0:8}:"
+  ab_notes_changelog "$from" "$to" "$FLAG_FULL"
 }
 
 cmd_init() {
@@ -546,6 +636,7 @@ cmd_help() {
 case "$CMD" in
   status) cmd_status ;;
   discover) cmd_discover ;;
+  notes) cmd_notes ;;
   init) cmd_init ;;
   prepare) cmd_prepare ;;
   verify) cmd_verify ;;

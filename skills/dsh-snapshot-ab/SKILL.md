@@ -28,7 +28,22 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
 ## 每日工作流
 
 1. **`ab.sh status`** — 确认当前状态（slots、phase、running web、扩展脏文件数）。phase 应为 `idle` 且 current 已设置；若未初始化先做 `ab.sh init --yes`（把当前运行版本收编为 slot-a：新建 worktree + `pnpm install` + **完整构建 build:lib+build:web**（数分钟，`dsh web` 依赖构建产物），不重启服务）。
-2. **`ab.sh discover`** — fetch 上游，列出快照分支，指出下一个候选。人工（agent）阅读 snapshot diff，判断上游这天的变化对扩展/我们的使用是否有影响（可参考已有的 snapshot-diff 研究流程）。
+2. **`ab.sh discover`** — fetch 上游，列出快照分支，指出下一个候选，并打印与当前的 diff stat；当候选**比当前更新**时，还会打印官方 changelog（见下）。人工（agent）按「**先读官方 changelog，再读代码 diff**」的顺序分析：notes 给出意图（为什么、放弃了什么），diff 给出事实；两者对不上时以代码为准并回报。参考已有的 snapshot-diff 研究流程与产出物（`snapshot-diff-report-*.md`）。
+
+### 官方 changelog：agent notes（先读这个，再读 diff）
+
+官方仓库**没有** CHANGELOG 文档，但强制每个非平凡改动写一篇 **Agent Note**
+（`.agents/notes/implemented/<class>/yyyy-mm-dd-<topic>.md`，class ∈ feature /
+bug-fix / simplification / architecture / process / testing；每篇带 `.zh.md` +
+`.i18n.yaml`，统一格式 Problem / Decision / Consequences / Alternatives）。因此
+**两个快照之间新增的 notes 就是官方对该快照的 changelog**。
+
+- `ab.sh discover`：候选比当前新时直接打印这段 changelog（当前 tip → 候选）。
+- 单独查看：**`ab.sh notes`** — 默认 运行中快照 tip → 最新快照；没有新快照时
+  自动显示「当前运行对」（另一槽 → 当前）。`--full` 连笔记正文一起打印；
+  `--from/--to <ref>` 指定区间；`--json` 输出结构化列表（纯 JSON，stdout 无日志）。
+- 脚本/agent 流程：读 changelog 条目 → 按需 `git show <ref>:<path>` 看全文 →
+  代码 diff 验证 → 写 `snapshot-diff-report-YYYYMMDD.md`。
 3. **`ab.sh prepare [--slot b] [--skip-web]`** — 在**非当前槽**执行完整流水线：
    - 检出候选快照（worktree reset / 新建）→ `pnpm install --frozen-lockfile` → harness `build:lib`（+`build:web`，除非 `--skip-web`）。
    - 扩展挂接：relink node_modules → 候选槽；生成 `tsconfig.ab.json`（把扩展 tsconfig 里的 `/Users/chris/.dsh/source/current` 前缀替换为候选槽）；用 `DSH_SOURCE=<候选槽>` 跑扩展的 typecheck/build/test；同步 skills 到 `~/.dsh/skills/`。

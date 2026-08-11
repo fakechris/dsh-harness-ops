@@ -7,14 +7,10 @@
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run tests"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/dsh-agent": "*",
-    "@deepseek-ai/dsh-session": "*",
-    "cordis": "*"
+    "prepare": "node scripts/dsh-env.mjs tsc -p tsconfig.json",
+    "build": "node scripts/dsh-env.mjs tsc -p tsconfig.json",
+    "typecheck": "node scripts/dsh-env.mjs tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/dsh-env.mjs vitest run tests"
   },
   "dsh": {
     "bundle": {

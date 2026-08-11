@@ -93,15 +93,18 @@ tail /tmp/dsh-web-guard.log                     # 应见 "port free — starting
 - 检测会话最后 turn 是 `interrupted` → 自动注入续接消息（含"结果未知的工具调用先核查、只读/幂等才重试"纪律）
 - agent 带着 `TOOL_OUTCOME_UNKNOWN` 上下文自动继续 —— **用户零输入**
 
-安装：
+安装（官方 bundle 通道，`dsh.bundle.patch` 格式）：
 
 ```sh
-# 方式1：加到 profile bundle
-# 编辑 ~/.dsh/profiles/web/package.json 的 dsh.profile.bundles，加 "@deepseek-ai/dsh-restart-recover"
-# 方式2：dsh plugin 命令
-cd plugins/dsh-restart-recover && npm run build   # 或 tsc -p tsconfig.json
-# 然后按 profile 的插件安装方式挂载（bundle 或 plugin add）
+# 官方安装：bundle 走 dsh plugin（产物经 prepare 构建，DSH_SOURCE 指向当前槽）
+cd plugins/dsh-restart-recover
+DSH_SOURCE=/Users/chris/.dsh/source/current npm run prepare   # 生成 lib/
+dsh plugin --profile web add .                                 # 在包目录内 add .（官方 bundle 安装）
 ```
+
+> 官方规范要点（对照 make-dsh-plugin）：bundle 插件的 `dependencies` **声明为空是设计**——
+> `@deepseek-ai/*` 官方包由 profile 的 pnpm 闭包注入（repository 插件才声明，两类相反）；
+> 产物不入库靠 `prepare` 脚本构建（git 源安装时 pnpm 自动跑）。
 
 配置（`config.resumeAutoContinue`，均可省略）：
 - `enabled`（默认 true）

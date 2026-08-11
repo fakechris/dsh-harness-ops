@@ -1,6 +1,6 @@
 ---
 name: dsh-session-recovery
-description: 诊断并修复 DeepSeek Harness 会话丢失/消失事故：GUI 侧边栏显示 "0 sessions"、会话列表为空、session 全部不见了、或出现 "corrupt Zstandard session log" / "first frame is not exactly one header line" / "torn JSONL record" 等校验错误。覆盖损坏 session 日志（session.jsonl.zstd）的定位与无损修复、备份与回滚、重启 dsh web 前写 handoff、修复后验证。当用户提到会话丢失、session 消失、0 sessions、日志损坏、重启后会话没了、或 session 相关校验报错时，务必使用本 skill，即使问题看起来像是"系统崩溃"或"integration 校验挂了"。
+description: 诊断并修复 DeepSeek Harness 会话丢失/消失事故：GUI 侧边栏显示 "0 sessions"、会话列表为空、session 全部不见了、或出现 "corrupt Zstandard session log" / "first frame is not exactly one header line" / "torn JSONL record" 等校验错误。覆盖损坏 session 日志（session.jsonl.zstd）的定位与无损修复、备份与回滚、重启 dsh web 前写 handoff、修复后验证。当用户提到会话丢失、session 消失、0 sessions、日志损坏、重启后会话没了、或 session 相关校验报错时，务必使用本 skill，即使问题看起来像是"系统崩溃"或"integration 校验挂了" English: diagnose and repair DeepSeek Harness session-loss incidents (0 sessions, empty session list, corrupted Zstandard session log, torn JSONL records); use whenever the user reports lost sessions, 0 sessions, corrupted logs, or session-related validation errors, even when it looks like a crash or a broken integration check。
 license: BSD-3-Clause
 metadata:
   version: 1.0.0

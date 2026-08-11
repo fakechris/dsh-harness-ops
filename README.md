@@ -1,4 +1,6 @@
 # dsh-harness-ops — DeepSeek Harness 运维工具箱（自愈 + 版本轮换）
+[English](README.en.md) | 中文
+
 
 > **这个仓库是 DSH 的"运维自愈工具箱"**：让 harness 在崩溃、升级、切换时都能自动恢复、
 > 无需人工干预。四个组件各管一段：

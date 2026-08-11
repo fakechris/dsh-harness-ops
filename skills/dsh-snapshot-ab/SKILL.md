@@ -36,13 +36,20 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
    - 任何一步失败：恢复扩展 relink/tsconfig，`current` 不动，phase 回 `idle`，**不切换**。
    - 成功后 phase=`prepared`，证据写入 ab-state.json（快照、tip、扩展构建结果）。
 4. **`ab.sh verify`** — 对已 prepared 的候选重跑扩展测试 + web 冒烟（不改状态），用于复查。
-5. **人工验收**（不可跳过）：审查 prepare 证据；必要时用 **`ab.sh stage --slot b --port 3082 [--keep --yes]`** 在 staging 端口手工检查。`stage` 会**检测已有 web 实例**：若生产在跑，会警告"第二个实例共享 ~/.dsh、只读查看"并要求用户 `--yes` 明确确认后才启动；不带 `--yes` 拒绝启动。**拿到用户明确同意后再切换**。
-6. **切换**：
+5. **`ab.sh e2e`** — **真实浏览器前端挂接验收**：把候选起在 staging 端口，用 agent-browser 打开页面，
+   按 `acceptance.e2e.checks`（如 `#dsh-track-fab` 存在）逐一断言**前端真的渲染了插件的 UI**——这是
+   manifest 断言也证明不了的最后一环（manifest 有行 ≠ 浏览器里挂上了）。通过后证据
+   `candidateEvidence.e2e.ok=true` 写入 state。需要 `agent-browser` 在 PATH。
+6. **验收模式开关**（`ab-config.json` 的 `acceptance.mode`）：
+   - **`manual`**（默认）：第 7 步切换前必须拿到用户明确同意（`--yes`）。
+   - **`auto`**：E2E 通过即视为用户已授权，切换不再要求交互确认（仍会写 handoff、重启 web）。
+     用户随时改配置切换模式；`switch` 在 auto 模式但 e2e 未过时会拒绝执行。
+7. **切换**：
    - 先写 handoff 说明（`dsh web` 重启会终止当前 agent 会话本身）。
-   - **`ab.sh switch --yes`** — 原子 `ln -sfn current -> 候选槽` → 验证 launcher 可启动 → 重启 web（自动杀旧 PID、nohup 启动、轮询 HTTP 200）→ phase=`switched`、confirmed=`false`。旧槽原样保留 = 回滚点。
+   - **`ab.sh switch`**（manual 模式需 `--yes`；auto 模式需 e2e 已过）— 原子 `ln -sfn current -> 候选槽` → 验证 launcher 可启动 → 重启 web（自动杀旧 PID、nohup 启动、轮询 HTTP 200）→ phase=`switched`、confirmed=`false`。旧槽原样保留 = 回滚点。
    - **装了 `dsh-web-guard` 时**：ab.sh 杀 web 后守护会自动用完整环境拉起新 current（更可靠的兜底）；ab.sh 自己先启动成功则守护不抢。无论谁拉起，**切换后浏览器必须硬刷新（Cmd+Shift+R）**——旧 tab 里是切换前加载的 boot manifest，新 client 插件/面板（如 dsh-track 的 ◆）只在刷新后的页面出现（2026-08-11 实测坑）。
-7. **确认稳定**：用户确认新版本可用后 **`ab.sh confirm`**（confirmed=true）。在此之前 `prepare` 拒绝回收回滚槽（除非 `--force`）。
-8. 下一天：A/B 角色互换，`prepare` 自动选非当前槽。
+8. **确认稳定**：用户确认新版本可用后 **`ab.sh confirm`**（confirmed=true）。在此之前 `prepare` 拒绝回收回滚槽（除非 `--force`）。
+9. 下一天：A/B 角色互换，`prepare` 自动选非当前槽。
 
 ## 回滚
 

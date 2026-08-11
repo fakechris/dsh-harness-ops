@@ -42,7 +42,26 @@ $AB status
 ```
 
 `ab-config.json` 关键字段：`upstream`（官方仓库）、`extensions[]`（扩展列表：repo/relink/构建命令）、
-`web.port`（staging 冒烟端口，默认 3081）、`web.productionPort`（默认 3080）。
+`web.port`（staging 冒烟端口，默认 3081）、`web.productionPort`（默认 3080）、
+`web.smokeClientIds`（client-manifest 断言）、**`acceptance`**（验收开关，见下）。
+
+### 验收模式开关（`acceptance`）
+
+```json
+"acceptance": {
+  "mode": "manual",                    // "manual"（默认，切换前必须你确认）| "auto"（e2e 过即切）
+  "e2e": {
+    "enabled": true,                   // 需 agent-browser 在 PATH
+    "checks": [ { "id": "@deepseek-ai/dsh-track", "selector": "#dsh-track-fab", "expect": "present" } ]
+  }
+}
+```
+
+- **`e2e`**：真实浏览器打开候选，断言这些 UI 元素存在——证明 client 插件**真的渲染**了
+  （manifest 有行 ≠ 浏览器挂上了；今天的 ◆ 面板事故就是例子）。
+- **`mode: manual`**：`switch` 仍需 `--yes`（用户确认）；**`mode: auto`**：e2e 通过即视为
+  用户已授权，`switch` 不再要交互确认（仍会写 handoff、重启 web）。随时可改；auto 模式下
+  e2e 未过时 `switch` 会拒绝执行。
 
 ---
 
@@ -97,11 +116,14 @@ $AB prepare                # 自动选非当前槽；也可显式 --slot b / --s
 # 4) 复查（可选）
 $AB verify                 # 对已 prepared 的候选重跑扩展测试 + 冒烟
 
-# 5) 人工验收（不可跳过）——见场景 E 的临时查看，或直接信证据
-#    （扩展 75/75 测试 + 冒烟 200 + 你自己浏览器里点一遍）
+# 5) E2E 前端挂接验收（推荐，唯一能证明"前端真的挂上了"的一步）
+$AB e2e                    # 真实浏览器打开候选，断言 acceptance.e2e.checks 里的 UI 元素存在
+                           # （如 #dsh-track-fab）；通过后证据 candidateEvidence.e2e.ok=true
 
-# 6) 你批准后切换 —— 见场景 D
-$AB switch --yes
+# 6) 切换 —— 开关决定这一步要不要你确认（见"验收模式"）
+#    manual 模式：你批准后 $AB switch --yes
+#    auto 模式：e2e 通过后 $AB switch（无需交互确认）
+$AB switch --yes           # manual 模式的切法（auto 模式直接 $AB switch）
 ```
 
 **`prepare` 的三条硬规则**（脚本内置，但你要知道）：
@@ -252,8 +274,9 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 | `$AB init --yes` | 收编当前版本为 slot-a（worktree+install+**完整构建**），不重启 | current |
 | `$AB prepare [--slot a\|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]` | 候选槽全流水线（构建+扩展+冒烟），不动生产 | 仅候选槽 |
 | `$AB verify` | 对 prepared 候选重跑扩展测试+冒烟 | 只读 |
+| `$AB e2e [--slot a\|b] [--port N]` | **真实浏览器前端挂接验收**（agent-browser 断言 `acceptance.e2e.checks` 的 UI 元素存在，如 `#dsh-track-fab`）；auto 模式切换的前置 | 临时实例 + 证据 |
 | `$AB stage --slot a\|b [--port N] [--keep]` | 临时起某槽到 staging 端口（检测到已有实例须 `--yes`） | 临时实例 |
-| `$AB switch --yes` | 原子切换 current → 候选 + 重启 web（**断会话**） | current + 服务 |
+| `$AB switch [--yes]` | 原子切换 current → 候选 + 重启 web（**断会话**）；manual 模式须 `--yes`，auto 模式须 e2e 已过 | current + 服务 |
 | `$AB confirm` | 标记当前稳定，解锁下一天回收回滚槽 | state |
 | `$AB rollback --yes` | current 指回上一版 + 重启 web（**断会话**） | current + 服务 |
 | `$AB cleanup [--yes] [dir...]` | 列出/移除旧 worktree（绝不删当前槽） | worktrees |

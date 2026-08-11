@@ -13,6 +13,10 @@
 #   prepare [--slot a|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]
 #                                build+verify the next snapshot in the other slot
 #   verify [--slot a|b]          re-run acceptance on the prepared candidate
+#   e2e [--slot a|b] [--port N]   real-browser acceptance: boot candidate on a
+#                                staging port and verify configured client
+#                                plugins' UI is attached (acceptance.e2e.checks);
+#                                mode=auto switch requires this to pass
 #   stage --slot a|b [--port N] [--keep] [--yes]
 #                                boot ONE slot on a staging port while production
 #                                runs (second instance = read-only; detected and
@@ -334,8 +338,53 @@ cmd_verify() {
   return 1
 }
 
+cmd_e2e() {
+  # Real-browser acceptance: verify the candidate's client plugins are actually
+  # attached in a browser (frontend mount gate), record evidence, and in
+  # acceptance.mode=auto this is what unblocks an unattended switch.
+  local slot dir wport whost wtimeout
+  slot="$FLAG_SLOT"
+  if [ -z "$slot" ]; then
+    slot=$(ab_state_get '.candidate // ""')
+    [ -n "$slot" ] || slot=$(ab_current_slot)
+  fi
+  dir=$(ab_slot_dir "$slot")
+  [ -n "$dir" ] && [ -d "$dir/bin" ] || ab_die "slot $slot has no usable checkout ($dir)"
+  wport="$FLAG_PORT"; [ -n "$wport" ] || wport=$(ab_config_get '.web.port // 3081')
+  whost=$(ab_config_get '.web.host // "127.0.0.1"'); wtimeout=$(ab_config_get '.web.startupTimeoutSec // 180')
+  ab_log "e2e acceptance for slot $slot ($dir)"
+  ab_lock "e2e-$$" || ab_die "another A/B operation holds the lock"
+  trap 'ab_unlock' EXIT
+  if acc_e2e "$dir" "$wport" "$whost" "$wtimeout"; then
+    ab_state_set --arg slot "$slot" --arg at "$(ab_now)" '
+      .candidateEvidence.e2e = { at: $at, slot: $slot, ok: true }
+      | .history += [{ at: $at, action: "e2e-pass", slot: $slot }]'
+    ab_save_state
+    trap - EXIT; ab_unlock
+    ab_ok "e2e PASSED — client plugins attached in a real browser"
+    return 0
+  fi
+  ab_state_set --arg slot "$slot" --arg at "$(ab_now)" '
+    .candidateEvidence.e2e = { at: $at, slot: $slot, ok: false }
+    | .history += [{ at: $at, action: "e2e-fail", slot: $slot }]'
+  ab_save_state
+  trap - EXIT; ab_unlock
+  ab_err "e2e FAILED — do NOT switch; investigate client attachment"
+  return 1
+}
+
 cmd_switch() {
-  [ "$FLAG_YES" = "1" ] || ab_die "switch cuts over current AND restarts dsh web (kills the agent's own session!) — pass --yes only after explicit user approval and a written handoff"
+  # Gate: manual mode requires --yes (user approval); auto mode requires a
+  # passing e2e record (the user's standing choice in acceptance.mode).
+  local mode e2e_ok
+  mode=$(ab_config_get '.acceptance.mode // "manual"')
+  if [ "$mode" = "auto" ]; then
+    e2e_ok=$(ab_state_get '.candidateEvidence.e2e.ok // false')
+    [ "$e2e_ok" = "true" ] || ab_die "acceptance.mode=auto but e2e has not passed — run: ab.sh e2e (or switch mode to manual and pass --yes)"
+    ab_warn "acceptance.mode=auto: switching WITHOUT interactive user approval (e2e passed)"
+  else
+    [ "$FLAG_YES" = "1" ] || ab_die "switch cuts over current AND restarts dsh web (kills the agent's own session!) — pass --yes only after explicit user approval and a written handoff"
+  fi
   local phase slot dir prev_target prev_slot at port
   phase=$(ab_state_get '.phase')
   [ "$phase" = "prepared" ] || ab_die "nothing prepared (phase=$phase); run prepare first"
@@ -500,6 +549,7 @@ case "$CMD" in
   init) cmd_init ;;
   prepare) cmd_prepare ;;
   verify) cmd_verify ;;
+  e2e) cmd_e2e ;;
   stage) cmd_stage ;;
   switch) cmd_switch ;;
   confirm) cmd_confirm ;;

@@ -36,5 +36,18 @@
     "smokeClientIds": [
       "@deepseek-ai/dsh-track"
     ]
+  },
+  "acceptance": {
+    "mode": "manual",
+    "e2e": {
+      "enabled": true,
+      "checks": [
+        {
+          "id": "@deepseek-ai/dsh-track",
+          "selector": "#dsh-track-fab",
+          "expect": "present"
+        }
+      ]
+    }
   }
 }

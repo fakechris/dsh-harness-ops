@@ -4,6 +4,63 @@
 # server; the candidate is exercised in isolation (its own dir + staging port).
 set -euo pipefail
 
+# acc_e2e <candidate-dir> <port> <host> <timeout>
+#   Real-browser E2E: boot the candidate on a staging port, then use
+#   agent-browser to verify the configured client plugins' UI is actually
+#   attached (e.g. #dsh-track-fab exists — the plugin's apply() ran and the
+#   frontend rendered it). This is the "frontend really mounted" gate that
+#   manifest grep alone cannot prove. Requires agent-browser on PATH.
+acc_e2e() {
+  local dir="$1" port="$2" host="$3" timeout="$4"
+  local allok=1 pid log i code sel id html
+  command -v agent-browser >/dev/null 2>&1 || { ab_err "e2e: agent-browser not on PATH"; return 1; }
+  log="$(mktemp -t dsh-ab-e2e.XXXXXX).log"
+  ab_log "e2e: booting $dir/bin/dsh web on $host:$port for browser checks (log $log)"
+  ( cd "$dir" && nohup ./bin/dsh web --port "$port" --host "$host" >"$log" 2>&1 & echo $! > "$log.pid" )
+  pid=$(cat "$log.pid")
+  i=0; code=000
+  while [ "$i" -lt "$timeout" ]; do
+    code=$(curl -s -o /dev/null -w '%{http_code}' "http://$host:$port/" 2>/dev/null || true)
+    [ "$code" = "200" ] && break
+    i=$((i + 1)); sleep 1
+  done
+  if [ "$code" != "200" ]; then
+    ab_err "e2e: server never answered 200 (pid $pid); log tail:"; tail -15 "$log" >&2 || true
+    kill "$pid" 2>/dev/null || true
+    return 1
+  fi
+  ab_ok "e2e: server up (HTTP 200 after ${i}s)"
+  local checks
+  checks=$(ab_config_get '.acceptance.e2e.checks // [] | length')
+  if [ "$checks" = "0" ]; then
+    ab_warn "e2e: no acceptance.e2e.checks configured — nothing to verify"
+    allok=0
+  fi
+  while read -r c; do
+    [ -n "$c" ] || continue
+    id=$(printf '%s' "$c" | jq -r '.id // ""')
+    sel=$(printf '%s' "$c" | jq -r '.selector // ""')
+    [ -n "$id" ] && [ -n "$sel" ] || continue
+    agent-browser open "http://$host:$port/" >/dev/null 2>&1 || true
+    sleep 1
+    html=$(agent-browser eval "!!document.querySelector('$sel')" 2>/dev/null | tail -1)
+    if printf '%s' "$html" | grep -q 'true'; then
+      ab_ok "  e2e: $id -> $sel present"
+    else
+      ab_err "  e2e: $id -> $sel MISSING (client not attached in real browser)"
+      allok=0
+    fi
+  done < <(ab_config_items '.acceptance.e2e.checks // [] | .[]')
+  # cleanup: TERM then force-free the port
+  kill "$pid" 2>/dev/null || true
+  i=0
+  while [ "$i" -lt 15 ] && lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; do i=$((i+1)); sleep 1; done
+  if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
+  fi
+  [ "$allok" = "1" ]
+}
+
 # acc_install <candidate-dir>   — pnpm install --frozen-lockfile in the slot
 acc_install() {
   local dir="$1"

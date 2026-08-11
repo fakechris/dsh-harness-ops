@@ -123,7 +123,11 @@ refs/heads/dsh-staging/20260809T141636Z             ← 官方 staging（含后�
    - `DSH_SOURCE=<候选槽> DSH_TSCONFIG=tsconfig.ab.json` 跑 typecheck/build/test；
    - 同步 skills → `~/.dsh/skills/`。
 7. 冒烟：`<候选槽>/bin/dsh web --port 3081`（`--workspace-root` 指向临时目录），轮询
-   HTTP 200 + smokePaths；`--keep` 保留给人工浏览器验收。
+   HTTP 200 + smokePaths + **client-manifest 断言**（`web.smokeClientIds`：抓 `/` 解析
+   `window.__DSH_BOOT__`，逐一断言扩展 client id 在场）；`--keep` 保留给人工浏览器验收。
+   > 教训（2026-08-11 事故）：仅 HTTP 200 会漏掉上游对 package.json 声明键的改名
+   > （20260810 快照把 `dshClient` 改为 `dsh.client`）——host 插件照常加载、扩展测试全绿、
+   > 冒烟 200，但扩展的 client 行被静默丢弃 → 面板消失。manifest 断言补上了这个洞。
 8. 全绿 → phase=`prepared`，证据（快照/tip/扩展结果/时间）写入 state；任一失败 → 还原
    relink/tsconfig、phase 回 `idle`、**current 与运行服务不动**。
 

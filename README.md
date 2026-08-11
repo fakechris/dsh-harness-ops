@@ -288,3 +288,7 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
   冒烟 **HTTP 200** ✅
 - 验收门真实捕获上游变更：20260810 快照移除了 `dsh web --workspace-root` 标志（冒烟自动适配）✅
 - 修复的机制 bug：init 缺完整构建（见场景 H）、stage 缺共存护栏（见场景 E）、冒烟清理残留进程 ✅
+- **20260810 上游声明键改名事故（已修复）**：快照把 client-modules 声明键 `dshClient` 改为
+  `dsh.client`，扩展未适配 → host 插件正常、扩展测试全绿、冒烟 200，但 client 面板消失。
+  修复：扩展双键声明（`dshClient` + `dsh.client`）+ 验收门新增 **client-manifest 断言**
+  （`web.smokeClientIds`，解析 `__DSH_BOOT__` 逐 id 校验）✅

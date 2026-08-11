@@ -15,8 +15,9 @@ acc_e2e() {
   local allok=1 pid log i code sel id html
   command -v agent-browser >/dev/null 2>&1 || { ab_err "e2e: agent-browser not on PATH"; return 1; }
   log="$(mktemp -t dsh-ab-e2e.XXXXXX).log"
-  ab_log "e2e: booting $dir/bin/dsh web on $host:$port for browser checks (log $log)"
-  ( cd "$dir" && nohup ./bin/dsh web --port "$port" --host "$host" >"$log" 2>&1 & echo $! > "$log.pid" )
+  ab_log "e2e: booting $(ab_boot_cmd "$dir") web on $host:$port for browser checks (log $log)"
+  # shellcheck disable=SC2086
+  ( cd "$dir" && nohup $(ab_boot_cmd "$dir") web --port "$port" --host "$host" >"$log" 2>&1 & echo $! > "$log.pid" )
   pid=$(cat "$log.pid")
   i=0; code=000
   while [ "$i" -lt "$timeout" ]; do
@@ -103,14 +104,15 @@ acc_web_smoke() {
   # --workspace-root exists on some snapshots and was removed on others; ask the
   # candidate's own CLI before passing it (acceptance must not assume flags).
   ws_arg=""
-  if ( cd "$dir" && ./bin/dsh web --help 2>&1 | grep -q -- '--workspace-root' ); then
+  # shellcheck disable=SC2086
+  if ( cd "$dir" && $(ab_boot_cmd "$dir") web --help 2>&1 | grep -q -- '--workspace-root' ); then
     ws_arg="--workspace-root $(mktemp -d -t dsh-ab-ws.XXXXXX)"
   else
     ab_warn "  candidate's dsh web has no --workspace-root flag; smoke without it"
   fi
-  ab_log "smoke: $dir/bin/dsh web --port $port (log $log)"
+  ab_log "smoke: $(ab_boot_cmd "$dir") web --port $port (log $log)"
   # shellcheck disable=SC2086
-  ( cd "$dir" && nohup ./bin/dsh web --port "$port" --host "$host" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
+  ( cd "$dir" && nohup $(ab_boot_cmd "$dir") web --port "$port" --host "$host" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
   pid=$(cat "$log.pid")
   i=0
   while [ "$i" -lt "$timeout" ]; do

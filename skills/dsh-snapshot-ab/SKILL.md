@@ -1,6 +1,17 @@
 ---
 name: dsh-snapshot-ab
-description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh2026/test-fakechris）每天发布新的 snapshots/YYYYMMDDTHHMMSSZ-* 分支时，在保留当前运行版本（A 槽）不动的前提下，把新快照检出到另一个槽（B 槽），重新挂接我们的扩展（如 dsh-track），构建+验收通过后才原子切换 current 符号链接；下一天角色互换。当用户说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 / 跑一下 daily 快照更新"时使用 English: daily upstream-snapshot A/B dual-slot rotation; use when the user mentions a new official snapshot branch, switching or upgrading to today's snapshot, AB dual-version rotation, or a daily snapshot update。
+description: >-
+  每日上游快照的 A/B 双槽轮换 + 官方改动提炼机制。上游官方（dsh2026/test-fakechris）每天发布新的
+  snapshots/YYYYMMDDTHHMMSSZ-* 分支：日常分析——跑当天快照与前一天快照的 diff，先读官方 changelog
+  （新增 agent notes，ab.sh notes）再验证代码，产出 snapshot-diff-report 报告；升级轮换——新快照
+  检出到另一槽、挂接扩展（dsh-track 等）、构建+验收通过后才原子切换 current，下一天角色互换。
+  用户说"分析今天和昨天的快照 / 今天官方改了啥 / 官方改了什么 / 看下今天的 changelog / 官方发新快照
+  了吗"触发日常分析；说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 /
+  跑一下 daily 快照更新"触发升级轮换。English: daily upstream-snapshot A/B dual-slot rotation plus
+  an official-change digest; use when the user asks what the official side changed between today's and
+  yesterday's snapshots (run the diff, read the agent-notes changelog first), mentions a new official
+  snapshot branch, switching or upgrading to today's snapshot, AB dual-version rotation, or a daily
+  snapshot update。
 ---
 
 # DSH Snapshot A/B Rotation（快照 A/B 轮换）
@@ -10,10 +21,24 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
 ## 何时用
 
 - 官方发布了新快照，要把运行版本换成新的（每天例行）。
+- 需要知道官方某天快照改了什么（日常分析：changelog + diff + 影响评估）。
 - 需要评估某个快照对我们扩展（dsh-track 等）的兼容性（构建/测试/冒烟）。
 - 需要回滚到上一个快照。
 
 不要用本 skill 做 rebase 到 master 的升级（那是 `dsh-upgrade`）、或修改 harness 源码（那是 `dsh-customize`）。
+
+## 用户怎么触发（对话说法 → 动作）
+
+你不必碰命令行；在对话里说下面的话，agent 会自动跑对应的 ab.sh 流程：
+
+| 你说 | agent 做 |
+|---|---|
+| "官方今天发新快照了吗" / "看下今天的快照" | `ab.sh discover`（列快照分支；候选更新时自动附官方 changelog） |
+| "分析一下今天和昨天的快照" / "今天官方改了啥" / "提炼一下官方改了什么" / "看看今天的 changelog" | `ab.sh discover` + `ab.sh notes`（官方 changelog）→ 按「notes 意图 → 代码 diff 事实」分析 → 产出 `snapshot-diff-report-YYYYMMDD.md` 并给影响评估 |
+| "跑一下 daily 快照更新" / "升级到今天的快照" | 完整轮换：`discover → prepare → e2e/验收 → switch --yes → confirm` |
+| "切换新快照" / "AB 双版本轮换" | 轮换/回滚流程（`prepare/switch/rollback`；重启 web 前先写 handoff） |
+
+注意：说"官方改了啥"一类话术时**默认只分析、不改运行版本**；要真正升级再说"升级/切换/跑一下 daily"。
 
 ## 布局（先解析，别假设）
 

@@ -69,13 +69,19 @@ lsof -ti :3080 | xargs kill
 sleep 15
 curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/   # 应 200
 tail /tmp/dsh-web-guard.log                     # 应见 "port free — starting"
+
+# 3. 浏览器验证：**硬刷新页面（Cmd+Shift+R）**
+#    —— 已打开的 tab 是重启前加载的旧页面（boot manifest 在页面加载时取），
+#    新拉起的 web 带的新插件/新 manifest 不会出现在旧 tab 里。
+#    实测坑（2026-08-11）：守护拉起 web 后不刷新，dsh-track 的 ◆ 悬浮按钮一直不出现，
+#    硬刷新后立即出现。所有"重启后插件/面板不见了"先查这个。
 ```
 
 ## 与 dsh-snapshot-ab 的关系
 
 - **ab.sh switch/rollback 杀 web 后，守护会自动拉起新 current** —— 切换不再需要手动启动，也不需要 ab.sh 自己 nohup（守护是更可靠的兜底）。
 - 如果 ab.sh 自己启动先成功，守护检测到端口已占就不动 —— 两者天然互补，无需改 ab.sh。
-- 建议：切到新槽后 `curl :3080` 确认 200，守护日志确认 `spawn issued`。
+- 建议：切到新槽后 `curl :3080` 确认 200，守护日志确认 `spawn issued`；**然后浏览器硬刷新**（见上面第 3 条——切槽后新 client manifest 只在刷新后的页面生效）。
 
 ## 故障排查
 
@@ -85,6 +91,7 @@ tail /tmp/dsh-web-guard.log                     # 应见 "port free — starting
 | 无限循环重启 | 用了 `launchctl submit` 一次性 job（有 KeepAlive） | 改用本 skill 的 LaunchAgent plist（KeepAlive 管守护，不管 web） |
 | 守护反复杀手动起的 3080 | 脚本 kill 逻辑错误 | 本脚本**从不 kill**，只检查端口后拉起；确认用的是本脚本 |
 | 日志在 `/tmp/dsh-web-guard.log` | 守护自身的日志 | web 进程日志追加在同一文件（`>>`），可一并排查 |
+| 重启后页面没有新插件/◆ 按钮 | **浏览器 tab 是旧的**（manifest 是页面加载时取的） | **硬刷新 Cmd+Shift+R**，不是普通刷新（2026-08-11 实测坑） |
 
 ## 已知限制
 

@@ -40,6 +40,7 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
 6. **切换**：
    - 先写 handoff 说明（`dsh web` 重启会终止当前 agent 会话本身）。
    - **`ab.sh switch --yes`** — 原子 `ln -sfn current -> 候选槽` → 验证 launcher 可启动 → 重启 web（自动杀旧 PID、nohup 启动、轮询 HTTP 200）→ phase=`switched`、confirmed=`false`。旧槽原样保留 = 回滚点。
+   - **装了 `dsh-web-guard` 时**：ab.sh 杀 web 后守护会自动用完整环境拉起新 current（更可靠的兜底）；ab.sh 自己先启动成功则守护不抢。无论谁拉起，**切换后浏览器必须硬刷新（Cmd+Shift+R）**——旧 tab 里是切换前加载的 boot manifest，新 client 插件/面板（如 dsh-track 的 ◆）只在刷新后的页面出现（2026-08-11 实测坑）。
 7. **确认稳定**：用户确认新版本可用后 **`ab.sh confirm`**（confirmed=true）。在此之前 `prepare` 拒绝回收回滚槽（除非 `--force`）。
 8. 下一天：A/B 角色互换，`prepare` 自动选非当前槽。
 
@@ -58,6 +59,7 @@ description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh20
 5. **不 stash、不硬删**：扩展仓库有未提交 WIP 时照常构建（构建的是工作区内容）；失败只恢复我们改过的东西（relink、tsconfig.ab.json），不动其它文件。
 6. **验收不过不切换**：任何 gate（install/build/扩展测试/web 冒烟）失败即停止，把失败证据报告给用户，绝不带病切换。
 7. **单实例原则**：两个槽可同起（不同端口），但共享 `~/.dsh` sessions/storages——**一个生产实例常驻**；另一个槽只用于验收/临时查看（`stage`/冒烟），检测到已有实例时必须让用户明确确认（`--yes`）后才启动，看完即关、只读不写。
+8. **验收含 client manifest**：冒烟不止 HTTP 200——`web.smokeClientIds` 断言扩展 client 出现在 `window.__DSH_BOOT__`（20260810 快照把声明键 `dshClient` 改为 `dsh.client`，扩展未适配时 host 正常、测试全绿但 client 静默丢失，面板消失——就是这个门抓出来的）。扩展需双键声明（`dshClient` + `dsh.client`）兼容两代快照。
 
 ## 扩展的 DSH_SOURCE 参数化（机制的一部分）
 

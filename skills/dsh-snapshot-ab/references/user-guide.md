@@ -81,10 +81,13 @@ $AB stage --slot a --port 3082 --keep --yes # 后台跑（nohup + pid/日志）�
 
 切换后打开 http://127.0.0.1:3080：
 
+- **先硬刷新（Cmd+Shift+R）**——旧 tab 里是切换前加载的 boot manifest，新 client 面板
+  （dsh-track 的 ◆）只在刷新后的页面出现（2026-08-11 实测坑）；
 - 你会看到一个**全新会话列表**（会话都存在磁盘上，重启后重新索引——不会丢）；
 - 找一个**新的会话**说"继续 snapshot-ab"，agent 会读 skill + 本目录的
   `HANDOFF-snapshot-ab.md` / `USER-GUIDE-snapshot-ab.md` 接上；
 - 或者你自己跑 `$AB status` 看：`current=b`、`phase=switched`、`confirmed=false`。
+- dsh-track 右侧面板默认**收起**：点右下角 ◆ 悬浮按钮展开（开合状态浏览器会记住）。
 
 **切换后第一件事**（新版本跑起来、你验证没问题后）：
 

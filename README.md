@@ -126,6 +126,7 @@ $AB status                 # phase=prepared, candidate=b
 ```sh
 $AB switch --yes
 # 输出会显示：CUTOVER → 停旧 web → 起新 web（nohup，日志 ~/.dsh/source/web.log）→ HTTP 200
+# 装了 dsh-web-guard 时：ab.sh 杀 web 后守护会自动拉起新 current（兜底，更可靠）
 ```
 
 **切换后（重启完成，打开 http://127.0.0.1:3080）**：
@@ -133,11 +134,20 @@ $AB switch --yes
 # ① 确认跑的是新版
 readlink ~/.dsh/source/current          # 应 = .../slot-b
 $AB status                              # current=b, phase=switched, confirmed=false
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:3080/   # 200
 
-# ② 用几天/一会儿，确认新版没问题
-# ③ 没问题 → 标记稳定（解锁下一天回收回滚槽）
+# ② ⚠️ 浏览器硬刷新（Cmd+Shift+R）—— 不是普通刷新！
+#    旧 tab 里是切换前加载的 boot manifest；新 client 插件/面板（如 dsh-track 的 ◆）
+#    只在刷新后的页面出现。2026-08-11 实测坑：不刷新，◆ 悬浮按钮一直不出现。
+
+# ③ 用几天/一会儿，确认新版没问题
+# ④ 没问题 → 标记稳定（解锁下一天回收回滚槽）
 $AB confirm
 ```
+
+**面板（dsh-track）注意**：右侧面板默认**收起**，右下角 ◆ 悬浮按钮点击展开，开合状态记在
+浏览器 localStorage（`dsh.track.open`）。"面板不见了"先按顺序查：manifest 有 dsh-track 吗 →
+硬刷新了吗 → 点 ◆ 了吗。
 
 **找回"之前那个会话"**：会话都存在磁盘上（`~/.dsh/sessions/`），重启后重新索引，一个都不丢。
 在 GUI 里找到本工作区（如 `~/source/dsh/explorer`）的历史会话即可；新会话会自动读到
@@ -267,14 +277,21 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 2. **扩展在槽外、按槽参数化**：扩展（如 dsh-track）通过 `DSH_SOURCE` / 生成的 `tsconfig.ab.json`
    / node_modules 符号链接指向目标槽 → 能在**切换前**就对着新快照构建测试。
 3. **验收门**：install / build / 扩展测试 / web 冒烟全绿才算 prepared；验收不过不切换。
+   冒烟不止 HTTP 200 —— `web.smokeClientIds` 断言扩展 client 出现在 `window.__DSH_BOOT__`
+   （20260810 把声明键 `dshClient` 改为 `dsh.client`，只有 HTTP 200 会漏掉这个洞）。
 4. **单实例原则**：两个槽共享 `~/.dsh`（sessions 是 append-only 共享文件、storages KV 是
    单进程串行写链）——一个生产常驻，另一个槽只在 `stage`/冒烟时短起、只读、看完即关。
 5. **确认窗口**：`switch` 后必须 `confirm` 才允许回收回滚槽；回滚永远可用。
+6. **与 `dsh-web-guard` 配合**：guard 是"带外"自愈守护（launchd/systemd 托管，PPID=1，
+   端口空闲 10s 内拉起）——ab.sh 杀 web 后 guard 自动拉起新 current，无需手动启动；
+   ab.sh 自己启动成功则 guard 不抢。切换/重启后**浏览器硬刷新**才看得到新 client 面板。
 
 ## 6. 与相邻项目的关系
 
 - 官方 `dsh-upgrade`：rebase 到上游 master 的整合流程（偶尔用）；本机制是"官方每日快照 +
   扩展外挂"的日常轮换，两者可共存。
+- **`dsh-web-guard`（同仓库的另一个 skill）**：重启自愈守护——AB 切换负责"切对版本"，
+  guard 负责"重启后必定拉起来"。两者互补：`ab.sh switch/rollback` 杀 web → guard 自动拉起。
 - 社区 `mainline-compat`（dsh-external-research）：插件 ↔ 当日 mainline 的**兼容性监控/报告**；
   它答"插件还能不能用"，本机制答"怎么安全地切过去"。
 - `dshx-update-check`：commit SHA 对比**检测**更新（只检测）。
@@ -292,3 +309,8 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
   `dsh.client`，扩展未适配 → host 插件正常、扩展测试全绿、冒烟 200，但 client 面板消失。
   修复：扩展双键声明（`dshClient` + `dsh.client`）+ 验收门新增 **client-manifest 断言**
   （`web.smokeClientIds`，解析 `__DSH_BOOT__` 逐 id 校验）✅
+- **面板回归验证（浏览器实测）**：修复后 slot-b 的 `__DSH_BOOT__` 含 `@deepseek-ai/dsh-track`、
+  `/plugins/.../client.js` 200、插件 apply() 执行（◆ FAB 与 panel DOM 存在）、点 FAB 面板展开
+  且拉到真实数据 ✅
+- **"重启后看不到 ◆"= 旧 tab 未刷新**（教训）：boot manifest 在页面加载时取，重启后旧 tab
+  一直是旧 manifest；硬刷新（Cmd+Shift+R）即出现。已写进两个 skill 的验证/排查节 ✅

@@ -44,8 +44,18 @@ dsh-harness-ops (this repo)
 
 **The most-used entries**:
 - Check status: `$AB status`
+- Daily analysis (what did the official change): `$AB discover` / `$AB notes` (official changelog) → see "Scenario C′"
 - Daily upgrade: `$AB discover → prepare → switch --yes → confirm`
 - Self-heal check: `kill $(lsof -ti :3080)` → auto-restart within 10s → session continues (no manual step)
+
+**Official-change digest (daily analysis)**: the official repo ships **no CHANGELOG**, but it
+**requires** an **Agent Note** per non-trivial change (`.agents/notes/implemented/<class>/
+yyyy-mm-dd-<topic>.md`, class ∈ feature / bug-fix / simplification / architecture / process /
+testing, each with a `.zh.md` + `.i18n.yaml`, format Problem / Decision / Consequences /
+Alternatives). So **the notes added between two snapshots ARE the official changelog for that
+pair**. `ab.sh discover` (printed automatically when the candidate is newer) and `ab.sh notes`
+(standalone) list that changelog directly — read the official "why" first, then verify against
+the code diff, and produce `snapshot-diff-report-YYYYMMDD.md`.
 
 ---
 
@@ -139,6 +149,43 @@ dsh web           # start production. Never specify A/B — it runs the slot `cu
 - The start/restart command is simply `dsh web` (or the PATH launcher), from any directory.
 - See which version is running: `readlink ~/.dsh/source/current` or `$AB status`.
 - Confirm health: `curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/` → `200`.
+
+### Scenario C′ · What did the official change → daily analysis (changelog → diff → report)
+
+**Analysis only — never touches the running version.** To learn what a snapshot changed and
+what it affects, just say "**analyze today's and yesterday's snapshots** / what did the official
+change today / look at today's changelog" in the conversation (equivalent commands below):
+
+```sh
+# 1) Official changelog (the "why, and what we gave up") — read this BEFORE the diff
+$AB discover               # list snapshot branches; prints the official changelog automatically
+                           #   when the candidate is newer (current tip → candidate)
+$AB notes                  # standalone: default running tip → newest snapshot; shows the running
+                           #   pair when up to date
+                           #   --full     print note bodies (Problem/Decision/Consequences/Alternatives)
+                           #   --from/--to <ref>   explicit range
+                           #   --json     pure JSON (no log lines on stdout)
+                           # e.g. feature  2026-08-08-windows-acl-restricted-token-sandbox  —  Windows sandbox rung: ...
+
+# 2) Verify against the code diff (notes are intent, diff is fact; when they disagree,
+#    trust the code and report)
+#    git diff <old-tip> <new-tip> for deeper dives
+
+# 3) Output: snapshot-diff-report-YYYYMMDD.md (the five change themes + core changes +
+#    impact assessment for dsh-track / our usage)
+```
+
+**Trigger phrases** (say these in conversation; no CLI needed):
+
+| You say | The agent does |
+|---|---|
+| "did the official release a new snapshot today" / "look at today's snapshot" | `ab.sh discover` (list snapshots + official changelog when the candidate is newer) |
+| "analyze today's and yesterday's snapshots" / "what did the official change today" / "look at today's changelog" | `discover` + `notes` → analyze "notes intent → diff facts" → write the report + impact assessment |
+| "run the daily snapshot update" / "upgrade to today's snapshot" | full rotation: `discover → prepare → acceptance → switch → confirm` |
+| "switch to the new snapshot" / "AB dual-version rotation" | rotation/rollback flow (write a handoff before restarting web) |
+
+> "what did the official change"-style phrases default to **analysis only**; say "upgrade /
+> switch / run daily" to actually rotate.
 
 ### Scenario C · Official released a new snapshot → daily rotation (core flow)
 

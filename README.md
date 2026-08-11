@@ -39,8 +39,17 @@ dsh-harness-ops（本仓库）
 
 **日常用得最多的入口**：
 - 看状态：`$AB status`
+- 每日分析（官方改了啥）：`$AB discover` / `$AB notes`（官方 changelog）→ 见「场景 C′」
 - 每日升级：`$AB discover → prepare → switch --yes → confirm`
 - 自愈验证：`kill $(lsof -ti :3080)` → 10s 内自动拉起 → 会话自动继续（无需手动）
+
+**官方改动提炼（每日分析）**：官方仓库没有 CHANGELOG 文档，但**强制**每个非平凡改动写一篇
+**Agent Note**（`.agents/notes/implemented/<class>/yyyy-mm-dd-<topic>.md`，class ∈ feature /
+bug-fix / simplification / architecture / process / testing，每篇带 `.zh.md` + `.i18n.yaml`，
+内容为 Problem / Decision / Consequences / Alternatives）。因此**两个快照之间新增的笔记就是
+官方对该快照的 changelog**。`ab.sh discover`（候选更新时自动打印）+ `ab.sh notes`（单独查看）
+把这段 changelog 直接列出来——先读官方"为什么"，再读代码 diff 验证，产出
+`snapshot-diff-report-YYYYMMDD.md`。
 
 ---
 
@@ -127,6 +136,38 @@ dsh web           # 启动生产。永远不需要指定 A/B —— 跑的是 cu
 - 启动/重启命令就是 `dsh web`（或 PATH 上的 launcher），从任何目录都行。
 - 想看现在跑的是哪个版本：`readlink ~/.dsh/source/current` 或 `$AB status`。
 - 想确认服务健康：`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/` → `200`。
+
+### 场景 C′ · 官方改了啥 → 每日分析（changelog → diff → 报告）
+
+**只分析，不改运行版本。** 想知道官方某天快照改了什么、影响什么，在对话里直接说
+「**分析一下今天和昨天的快照** / 今天官方改了啥 / 官方改了什么 / 看下今天的 changelog」即可
+触发（等价命令如下）：
+
+```sh
+# 1) 官方 changelog（"为什么、放弃了什么"）——先读这个，再读 diff
+$AB discover               # 列快照分支；候选比当前新时直接打印官方 changelog（当前 tip → 候选）
+$AB notes                  # 单独打印：默认 运行 tip → 最新快照；没有新快照时自动显示"当前运行对"
+                           #   --full   连笔记正文（Problem/Decision/Consequences/Alternatives）
+                           #   --from/--to <ref>   指定区间
+                           #   --json   纯 JSON（stdout 无日志，机器可解析）
+                           # 输出形如：feature  2026-08-08-windows-acl-restricted-token-sandbox  —  Windows sandbox rung: ...
+
+# 2) 代码 diff 验证（notes 是意图，diff 是事实；两者对不上以代码为准并回报）
+#    git diff <old-tip> <new-tip> 按需深挖
+
+# 3) 产出：snapshot-diff-report-YYYYMMDD.md（官方改动五大主题 + 核心改动 + 对 dsh-track/我们的影响评估）
+```
+
+**触发话术速查**（对话里说，不用碰命令行）：
+
+| 你说 | agent 做 |
+|---|---|
+| "官方今天发新快照了吗" / "看下今天的快照" | `ab.sh discover`（列快照 + 候选更新时附官方 changelog） |
+| "分析一下今天和昨天的快照" / "今天官方改了啥" / "官方改了什么" / "看下今天的 changelog" | `discover` + `notes` → 按「notes 意图 → diff 事实」分析 → 产出报告 + 影响评估 |
+| "跑一下 daily 快照更新" / "升级到今天的快照" | 完整轮换：`discover → prepare → 验收 → switch → confirm` |
+| "切换新快照" / "AB 双版本轮换" | 轮换/回滚流程（重启 web 前先写 handoff） |
+
+> 说"官方改了啥"一类话术时**默认只分析、不改运行版本**；要真正升级再说"升级/切换/跑一下 daily"。
 
 ### 场景 C · 官方发了新快照 → 每日轮换（核心流程）
 

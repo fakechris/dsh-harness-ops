@@ -1,6 +1,6 @@
 ---
 name: dsh-snapshot-ab
-description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh2026/test-fakechris）每天发布新的 snapshots/YYYYMMDDTHHMMSSZ-* 分支时，在保留当前运行版本（A 槽）不动的前提下，把新快照检出到另一个槽（B 槽），重新挂接我们的扩展（如 dsh-track），构建+验收通过后才原子切换 current 符号链接；下一天角色互换。当用户说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 / 跑一下 daily 快照更新"时使用。
+description: 每日上游快照的 A/B 双槽轮换机制。上游官方（dsh2026/test-fakechris）每天发布新的 snapshots/YYYYMMDDTHHMMSSZ-* 分支时，在保留当前运行版本（A 槽）不动的前提下，把新快照检出到另一个槽（B 槽），重新挂接我们的扩展（如 dsh-track），构建+验收通过后才原子切换 current 符号链接；下一天角色互换。当用户说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 / 跑一下 daily 快照更新"时使用 English: daily upstream-snapshot A/B dual-slot rotation; use when the user mentions a new official snapshot branch, switching or upgrading to today's snapshot, AB dual-version rotation, or a daily snapshot update。
 ---
 
 # DSH Snapshot A/B Rotation（快照 A/B 轮换）

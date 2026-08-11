@@ -140,6 +140,20 @@ ab_other_slot() {
 
 ab_is_initialized() { [ "$(ab_state_get '.current // ""')" != "" ]; }
 
+# ab_boot_cmd <dir> — command line that boots this slot's dsh CLI.
+# 0810-era slots ship bin/dsh (a tsx wrapper); the 20260811 snapshot removed it
+# (source-run without a managed installer), so fall back to the same recipe the
+# old wrapper used, anchored to the slot by absolute paths + the tsconfig hook.
+# Callers expand it UNQUOTED inside their subshell (paths contain no spaces).
+ab_boot_cmd() {
+  local dir="$1"
+  if [ -x "$dir/bin/dsh" ]; then
+    printf '%s\n' "$dir/bin/dsh"
+  else
+    printf 'env NODE_USE_ENV_PROXY=1 TSX_TSCONFIG_PATH=%s/tsconfig.json node --import %s/node_modules/tsx/dist/esm/index.mjs %s/apps/cli/src/bin.ts\n' "$dir" "$dir" "$dir"
+  fi
+}
+
 # ---- misc -------------------------------------------------------------------
 
 ab_now() { date -u +%Y%m%dT%H%M%SZ; }

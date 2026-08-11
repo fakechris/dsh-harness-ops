@@ -506,7 +506,8 @@ cmd_switch() {
   ln -sfn "$dir" "$AB_SOURCE/current"
   [ "$(readlink "$AB_SOURCE/current")" = "$dir" ] || ab_die "symlink cutover failed"
   ab_log "  verifying launcher boots from new current..."
-  dsh --version >/dev/null 2>&1 || { ab_warn "launcher boot failed — rolling back symlink immediately"; ln -sfn "$prev_target" "$AB_SOURCE/current"; ab_die "rollback symlink restored to $prev_target"; }
+  # shellcheck disable=SC2086
+  $(ab_boot_cmd "$dir") --version >/dev/null 2>&1 || { ab_warn "launcher boot failed — rolling back symlink immediately"; ln -sfn "$prev_target" "$AB_SOURCE/current"; ab_die "rollback symlink restored to $prev_target"; }
   ab_state_set --arg slot "$slot" --arg prev "$prev_slot" --arg prevtarget "$prev_target" --arg at "$at" --arg snap "$(ab_state_get '.candidateSnapshot')" '
     .current = $slot | .phase = "switched" | .confirmed = false
     | .lastSwitch = { at: $at, from: $prev, to: $slot, previousTarget: $prevtarget, snapshot: $snap }
@@ -537,7 +538,8 @@ cmd_rollback() {
   ab_log "ROLLBACK: current -> $prev_target"
   ln -sfn "$prev_target" "$AB_SOURCE/current"
   [ "$(readlink "$AB_SOURCE/current")" = "$prev_target" ] || ab_die "symlink rollback failed"
-  dsh --version >/dev/null 2>&1 || { ab_warn "launcher boot failed after rollback"; }
+  # shellcheck disable=SC2086
+  $(ab_boot_cmd "$prev_target") --version >/dev/null 2>&1 || { ab_warn "launcher boot failed after rollback"; }
   # map the target back to a slot if it is one
   local slot="" s
   for s in a b; do
@@ -577,11 +579,14 @@ ab_restart_web() {
   # nohup'd dsh web must find `node` on PATH: a bare `dsh` from a non-login
   # shell fails with "exec: node: not found" (the launcher execs node). Pin the
   # node bin dir from the current shell and use the resolved launcher path.
-  local node_bin=""
+  local node_bin="" boot_dir
   command -v node >/dev/null 2>&1 && node_bin=$(dirname "$(command -v node)")
   log="$AB_SOURCE/web.log"
-  ab_log "  starting: nohup ${AB_LAUNCHER:-dsh} web (cwd $cwd, log $log)"
-  ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup "${AB_LAUNCHER:-dsh}" web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
+  # restart boots the NEW current (the symlink was already cut over)
+  boot_dir=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")
+  ab_log "  starting: nohup $(ab_boot_cmd "$boot_dir") web (cwd $cwd, log $log)"
+  # shellcheck disable=SC2086
+  ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup $(ab_boot_cmd "$boot_dir") web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
   i=0; code=000
   while [ "$i" -lt 180 ]; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" 2>/dev/null || echo 000)
@@ -618,11 +623,13 @@ cmd_stage() {
   fi
   ab_log "booting slot $slot (${dir}) web on http://127.0.0.1:$port — production instance keeps running; this one is READ-ONLY inspection."
   if [ "$FLAG_KEEP" = "1" ]; then
-    ( cd "$dir" && nohup ./bin/dsh web --port "$port" >"$AB_SOURCE/web-stage-$slot.log" 2>&1 & echo $! > "$AB_SOURCE/stage-$slot.pid" )
+    # shellcheck disable=SC2086
+    ( cd "$dir" && nohup $(ab_boot_cmd "$dir") web --port "$port" >"$AB_SOURCE/web-stage-$slot.log" 2>&1 & echo $! > "$AB_SOURCE/stage-$slot.pid" )
     ab_ok "staging server up (log $AB_SOURCE/web-stage-$slot.log, pid $(cat "$AB_SOURCE/stage-$slot.pid"))"
     ab_log "  stop it: kill \$(lsof -tiTCP:$port -sTCP:LISTEN)   # listener pid may differ from the wrapper"
   else
-    ( cd "$dir" && exec ./bin/dsh web --port "$port" )
+    # shellcheck disable=SC2086
+    ( cd "$dir" && exec $(ab_boot_cmd "$dir") web --port "$port" )
   fi
 }
 

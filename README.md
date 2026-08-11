@@ -1,14 +1,45 @@
-# dsh-snapshot-ab — DeepSeek Harness 每日快照 A/B 双槽轮换
+# dsh-harness-ops — DeepSeek Harness 运维工具箱（自愈 + 版本轮换）
 
-> 官方 `dsh2026/test-fakechris` 每天发布一个新的 `snapshots/YYYYMMDDTHHMMSSZ-<sha>` 分支。
-> 我们不 rebase、不直接切：**旧版本留在 A 槽继续跑，新快照在 B 槽构建 + 挂接扩展 + 验收，
-> 通过后才原子切换；下一天 A/B 角色互换。** 任何时刻都有一个未动的旧版本可回滚。
+> **这个仓库是 DSH 的"运维自愈工具箱"**：让 harness 在崩溃、升级、切换时都能自动恢复、
+> 无需人工干预。三个组件各管一段：
 >
-> 本 README 是**人读的操作手册**（场景化，含每条命令）。Agent 读 `skills/dsh-snapshot-ab/SKILL.md`。
+> | 组件 | 类型 | 管什么 |
+> |---|---|---|
+> | **`skills/dsh-snapshot-ab`** | skill | 官方每日快照 A/B 双槽轮换 —— 升级"切对版本" |
+> | **`skills/dsh-web-guard`** | skill | 自愈守护 —— web 死后 10s 自动拉起 |
+> | **`plugins/dsh-restart-recover`** | cordis 插件 | 重启续接 —— 被中断的 turn 自动继续 |
+>
+> 合起来回答三个问题：**web 挂了谁拉起？拉起后工作继续吗？官方发新版本怎么安全切换？**
+> 三者互补：`ab.sh switch/rollback` 杀 web → `dsh-web-guard` 拉起 → `dsh-restart-recover` 续接。
+>
+> > 曾用名 `dsh-skill-snapshot-ab`（2026-08-11 更名）—— 仓库从"纯 AB 轮换 skill"长成了
+> > "skill + 插件"混合工具箱，名字不再贴切。skill 目录名 `dsh-snapshot-ab` 保持不变
+> > （它是 skill 触发名 + ab.sh 安装路径，改了破坏机制）。
+>
+> 本 README 是**人读的操作手册**（场景化，含每条命令）。Agent 读各 skill 的 `SKILL.md`。
 
 ---
 
-## 0. 先懂一个心智模型
+## 📦 能力地图
+
+```
+dsh-harness-ops（本仓库）
+├── skills/dsh-snapshot-ab/        AB 轮换：官方快照 A/B 双槽，旧版保底、验收后原子切换
+│   └── scripts/ab.sh              主命令（status/discover/prepare/verify/switch/confirm/rollback）
+├── skills/dsh-web-guard/          自愈守护：launchd/systemd 托管，端口空闲 10s 内拉起 web
+│   └── scripts/install.sh         跨平台安装（macOS launchd / Linux systemd）
+└── plugins/dsh-restart-recover/   重启续接插件：agent/created 检测 interrupted → 自动注入续接
+    └── src/index.ts               cordis 插件（监听 agent/created，零 dsh-track 依赖）
+```
+
+**日常用得最多的入口**：
+- 看状态：`$AB status`
+- 每日升级：`$AB discover → prepare → switch --yes → confirm`
+- 自愈验证：`kill $(lsof -ti :3080)` → 10s 内自动拉起 → 会话自动继续（无需手动）
+
+---
+
+## 0. 先懂一个心智模型（AB 轮换）
 
 ```
 ~/.local/bin/dsh  (PATH launcher)

@@ -1,9 +1,15 @@
 ---
 name: dsh-web-guard
-description: dsh web 自愈守护——agent 运行在 dsh web 进程内，kill 掉 3080 等于杀掉自己，无法自救。本 skill 提供"带外重启"能力：把守护脚本装成系统服务（macOS launchd / Linux systemd），守护与 agent 进程树完全无关，任何 kill/崩溃/重启机器都会在 10 秒内用完整环境自动拉起 dsh web，无需人工干预。当用户说"重启 3080 / web 挂了怎么自动拉起来 / 切换后自己把自己拉起来 / kill 后不用手动启动 / 做重启守护"时使用。
+description: dsh web 自愈——重启自动拉起 + 自动继续。agent 运行在 dsh web 进程内，kill 掉 3080 等于杀掉自己，无法自救。本 skill 提供完整的重启自愈：① 守护（scripts/install.sh 装成系统服务，launchd/systemd，PPID=1）在 web 死后 10 秒内自动拉起；② 配套插件 @deepseek-ai/dsh-restart-recover（本项目的 plugins/ 目录）监听 agent/created，检测到上次 turn 被中断后自动注入续接消息，agent 带着中断上下文继续 —— 用户零输入。当用户说"重启 3080 / web 挂了怎么自动拉起来 / 切换后自己把自己拉起来 / kill 后不用手动启动 / 重启后自动继续 / 做重启守护"时使用。
 ---
 
-# dsh-web-guard — dsh web 自愈守护（带外重启）
+# dsh-web-guard — dsh web 自愈（守护拉起 + 自动续接）
+
+> 本 skill 覆盖重启自愈的**两步**：
+> 1. **拉起**（本 skill 的守护脚本）—— web 死后自动重启进程
+> 2. **续接**（配套插件 `plugins/dsh-restart-recover`）—— 重启后自动继续被中断的 agent turn
+>
+> 两者合起来才构成"重启后自动继续工作，用户零输入"的完整闭环。
 
 ## 问题：为什么"重启 3080"会反复失败
 
@@ -76,6 +82,33 @@ tail /tmp/dsh-web-guard.log                     # 应见 "port free — starting
 #    实测坑（2026-08-11）：守护拉起 web 后不刷新，dsh-track 的 ◆ 悬浮按钮一直不出现，
 #    硬刷新后立即出现。所有"重启后插件/面板不见了"先查这个。
 ```
+
+## 第二步：自动续接被中断的 turn（插件 `dsh-restart-recover`）
+
+守护解决了"web 自动拉起"，但拉起的 web 里，**被中断的 agent turn 是 idle 的**（崩溃时 `turn/end interrupted`，`ctx.agents.resume` 恢复会话但 agent 等输入）—— 用户仍需手动打"继续"。
+
+**`plugins/dsh-restart-recover`**（本项目的 cordis 插件）补上这一步：
+
+- 监听 `agent/created`（create 和 resume 都触发，host 侧权威信号，无前端时序竞态）
+- 检测会话最后 turn 是 `interrupted` → 自动注入续接消息（含"结果未知的工具调用先核查、只读/幂等才重试"纪律）
+- agent 带着 `TOOL_OUTCOME_UNKNOWN` 上下文自动继续 —— **用户零输入**
+
+安装：
+
+```sh
+# 方式1：加到 profile bundle
+# 编辑 ~/.dsh/profiles/web/package.json 的 dsh.profile.bundles，加 "@deepseek-ai/dsh-restart-recover"
+# 方式2：dsh plugin 命令
+cd plugins/dsh-restart-recover && npm run build   # 或 tsc -p tsconfig.json
+# 然后按 profile 的插件安装方式挂载（bundle 或 plugin add）
+```
+
+配置（`config.resumeAutoContinue`，均可省略）：
+- `enabled`（默认 true）
+- `cwdFilter: string[]` —— 只续接指定 workspace 的会话
+- `minInterruptAgeMs` —— 跳过"刚中断"的会话（防误触用户主动取消）
+
+验证：重启 3080 → 浏览器硬刷新 → **之前的会话自动继续**（对话里应出现续接消息文本"检测到上次会话因重启被中断…"）。实测通过（2026-08-11）。
 
 ## 与 dsh-snapshot-ab 的关系
 

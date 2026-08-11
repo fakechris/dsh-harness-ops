@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2024"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "outDir": "lib",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationDir": "lib/types",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmitOnError": true,
+    "types": ["node"],
+    "typeRoots": [
+      "/Users/chris/.dsh/source/slot-b/node_modules/@types",
+      "/Users/chris/.dsh/source/slot-b/apps/web/node_modules/@types"
+    ],
+    "paths": {
+      "cordis": [
+        "/Users/chris/.dsh/source/slot-b/vendor/cordis/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-agent": [
+        "/Users/chris/.dsh/source/slot-b/packages/core/agent/lib/types/index.d.ts"
+      ],
+      "@deepseek-ai/dsh-session": [
+        "/Users/chris/.dsh/source/slot-b/packages/core/session/lib/types/index.d.ts"
+      ]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["tests", "lib"]
+}

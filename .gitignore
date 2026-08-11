@@ -1,3 +1,7 @@
 node_modules/
 .DS_Store
 *.log
+
+# plugin build artifacts
+plugins/*/lib/
+plugins/*/node_modules/

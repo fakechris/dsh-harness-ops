@@ -313,8 +313,12 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 
 - 官方 `dsh-upgrade`：rebase 到上游 master 的整合流程（偶尔用）；本机制是"官方每日快照 +
   扩展外挂"的日常轮换，两者可共存。
-- **`dsh-web-guard`（同仓库的另一个 skill）**：重启自愈守护——AB 切换负责"切对版本"，
-  guard 负责"重启后必定拉起来"。两者互补：`ab.sh switch/rollback` 杀 web → guard 自动拉起。
+- **`dsh-web-guard`（同仓库的另一个 skill）+ `plugins/dsh-restart-recover`**：完整的重启自愈——
+  AB 切换负责"切对版本"，guard（skill 的守护脚本）负责"重启后必定拉起 web"，restart-recover
+  （cordis 插件）负责"重启后自动继续被中断的 turn"（监听 `agent/created`，注入续接消息，
+  用户零输入）。三者互补：`ab.sh switch/rollback` 杀 web → guard 拉起 → recover 续接。
+  插件从 dsh-track 独立出来（2026-08-11），因为它和 guard 一样是**平台级自愈能力**，
+  不该绑在业务插件 dsh-track 上。
 - 社区 `mainline-compat`（dsh-external-research）：插件 ↔ 当日 mainline 的**兼容性监控/报告**；
   它答"插件还能不能用"，本机制答"怎么安全地切过去"。
 - `dshx-update-check`：commit SHA 对比**检测**更新（只检测）。

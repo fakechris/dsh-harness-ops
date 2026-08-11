@@ -5,9 +5,9 @@ description: >-
   snapshots/YYYYMMDDTHHMMSSZ-* 分支：日常分析——跑当天快照与前一天快照的 diff，先读官方 changelog
   （新增 agent notes，ab.sh notes）再验证代码，产出 snapshot-diff-report 报告；升级轮换——新快照
   检出到另一槽、挂接扩展（dsh-track 等）、构建+验收通过后才原子切换 current，下一天角色互换。
-  用户说"分析今天和昨天的快照 / 今天官方改了啥 / 官方改了什么 / 看下今天的 changelog / 官方发新快照
-  了吗"触发日常分析；说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 /
-  跑一下 daily 快照更新"触发升级轮换。English: daily upstream-snapshot A/B dual-slot rotation plus
+  用户说"分析今天和昨天的快照 / 今天官方改了啥 / 官方改了什么 / 看下今天的 changelog / 官方发新快照了吗"
+  触发日常分析；说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 / 跑一下
+  daily 快照更新"触发升级轮换。English: daily upstream-snapshot A/B dual-slot rotation plus
   an official-change digest; use when the user asks what the official side changed between today's and
   yesterday's snapshots (run the diff, read the agent-notes changelog first), mentions a new official
   snapshot branch, switching or upgrading to today's snapshot, AB dual-version rotation, or a daily

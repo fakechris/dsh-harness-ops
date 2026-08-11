@@ -1,0 +1,290 @@
+# dsh-snapshot-ab — DeepSeek Harness 每日快照 A/B 双槽轮换
+
+> 官方 `dsh2026/test-fakechris` 每天发布一个新的 `snapshots/YYYYMMDDTHHMMSSZ-<sha>` 分支。
+> 我们不 rebase、不直接切：**旧版本留在 A 槽继续跑，新快照在 B 槽构建 + 挂接扩展 + 验收，
+> 通过后才原子切换；下一天 A/B 角色互换。** 任何时刻都有一个未动的旧版本可回滚。
+>
+> 本 README 是**人读的操作手册**（场景化，含每条命令）。Agent 读 `skills/dsh-snapshot-ab/SKILL.md`。
+
+---
+
+## 0. 先懂一个心智模型
+
+```
+~/.local/bin/dsh  (PATH launcher)
+   └─> ~/.dsh/source/current   ← 符号链接，指向"当前生效的槽"
+            └─> slot-a/  ── 旧版（20260809 快照 + 本地 fix）    ← 当前生产
+            └─> slot-b/  ── 新版（20260810 快照，已构建+验收）  ← 候选
+```
+
+- **生产（http://127.0.0.1:3080）永远只跑 `current` 指向的那个槽。**
+- 切换 = 一次原子 `ln -sfn current <槽>` + 重启 `dsh web`。
+- A/B 是**槽位身份**（目录名固定），**内容每天互换**：旧版占一个槽，新快照进另一个槽。
+- 两个槽都能"同时起进程"（不同端口），但共享 `~/.dsh` 的 sessions/storages ——
+  **一个生产实例常驻，另一个槽只用于验收/临时查看（只读、看完就关）**，详见场景 E。
+
+约定：下文 `$AB` 指 `~/.dsh/skills/dsh-snapshot-ab/scripts/ab.sh`（装好 skill 后就在）。
+
+---
+
+## 1. 安装
+
+```sh
+# 1) 把 skill 装进默认扫描目录
+mkdir -p ~/.dsh/skills && cp -r skills/dsh-snapshot-ab ~/.dsh/skills/
+
+# 2) 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
+#    通常只需确认 ab-config.json 里的 extensions（扩展仓库路径）与 web 端口
+vi ~/.dsh/source/ab-config.json
+
+# 3) 验证
+$AB status
+```
+
+`ab-config.json` 关键字段：`upstream`（官方仓库）、`extensions[]`（扩展列表：repo/relink/构建命令）、
+`web.port`（staging 冒烟端口，默认 3081）、`web.productionPort`（默认 3080）。
+
+---
+
+## 2. 场景手册（按故事走，命令可直接抄）
+
+### 场景 A · 第一次部署：把当前运行版本收编为 slot-a
+
+> 目标：让机制接管现有安装 —— 当前正在跑的版本变成 A 槽，机制状态落盘。**不会重启服务。**
+
+```sh
+$AB status        # 确认 current 指向、slots 为空、phase=idle
+$AB init --yes    # 新建 slot-a worktree + pnpm install + 完整构建（build:lib+build:web，约几分钟）
+                  # 完成后 current -> slot-a；正在跑的服务不受影响（下次重启才走新槽）
+$AB status        # slot a* 有内容，current=a，phase=idle
+```
+
+`init` 只做一次。它会**完整构建**收编槽（`dsh web` 依赖 `lib/` 与 `apps/web/dist`，
+新 worktree 没有这些 gitignored 产物），构建失败会中止且不碰 `current`。
+
+### 场景 B · 日常启动（每天都一样）
+
+```sh
+dsh web           # 启动生产。永远不需要指定 A/B —— 跑的是 current 指向的槽
+```
+
+- 启动/重启命令就是 `dsh web`（或 PATH 上的 launcher），从任何目录都行。
+- 想看现在跑的是哪个版本：`readlink ~/.dsh/source/current` 或 `$AB status`。
+- 想确认服务健康：`curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3080/` → `200`。
+
+### 场景 C · 官方发了新快照 → 每日轮换（核心流程）
+
+> 官方每天发一个新 `snapshots/...` 分支。目标是：**在不动生产的前提下**，把新快照构建好、
+> 挂上我们的扩展、验收通过，然后你批准才切换。
+
+```sh
+# 1) 看状态
+$AB status                 # 谁在生产、phase、扩展脏文件数
+
+# 2) 看官方今天发了什么
+$AB discover               # fetch 上游 → 列出快照分支 → 指出下一个候选 + 与当前的 diff 摘要
+                           # 输出类似：next candidate: snapshots/20260810T155924Z-8ec407cd64
+
+# 3) 在"非当前槽"构建 + 挂扩展 + 冒烟（全程不动生产）
+$AB prepare                # 自动选非当前槽；也可显式 --slot b / --snapshot <ref>
+                           # 流水线：检出快照 → pnpm install --frozen-lockfile
+                           #        → build:lib + build:web
+                           #        → 扩展 relink + 生成 tsconfig.ab.json + typecheck/build/test（DSH_SOURCE=候选槽）
+                           #        → 候选 bin/dsh web 在 staging 端口(3081)冒烟 HTTP 200
+                           # 全绿 → phase=prepared，证据写入 ab-state.json
+                           # 任何一步失败 → 还原扩展 relink、current 不动、phase 回 idle（见场景 G）
+
+# 4) 复查（可选）
+$AB verify                 # 对已 prepared 的候选重跑扩展测试 + 冒烟
+
+# 5) 人工验收（不可跳过）——见场景 E 的临时查看，或直接信证据
+#    （扩展 75/75 测试 + 冒烟 200 + 你自己浏览器里点一遍）
+
+# 6) 你批准后切换 —— 见场景 D
+$AB switch --yes
+```
+
+**`prepare` 的三条硬规则**（脚本内置，但你要知道）：
+- 候选槽 ≠ 当前槽；
+- 切换后未 `confirm` 前，**拒绝回收回滚槽**（那是唯一保底），除非 `--force`；
+- 验收不过绝不切换。
+
+### 场景 D · 切换那一刻（会断会话，先读这个）
+
+> `switch` 做的事：`current` 原子指到候选槽 → 验证 launcher → 重启 `dsh web`。
+> **重启 = 你当前所在的 agent 会话会断**（托管 web 的就是它自己）。这是预期，不是故障。
+
+**切换前（3 件事）**：
+```sh
+# ① 把要说的话说完 / 写好 handoff（仓库目录下的 HANDOFF-snapshot-ab.md 就是恢复入口）
+# ② 确认候选已 prepared 且你验收过
+$AB status                 # phase=prepared, candidate=b
+# ③ 想保留 staging 人工复查的实例？先关掉（见场景 E），避免双实例
+```
+
+**切换**：
+```sh
+$AB switch --yes
+# 输出会显示：CUTOVER → 停旧 web → 起新 web（nohup，日志 ~/.dsh/source/web.log）→ HTTP 200
+```
+
+**切换后（重启完成，打开 http://127.0.0.1:3080）**：
+```sh
+# ① 确认跑的是新版
+readlink ~/.dsh/source/current          # 应 = .../slot-b
+$AB status                              # current=b, phase=switched, confirmed=false
+
+# ② 用几天/一会儿，确认新版没问题
+# ③ 没问题 → 标记稳定（解锁下一天回收回滚槽）
+$AB confirm
+```
+
+**找回"之前那个会话"**：会话都存在磁盘上（`~/.dsh/sessions/`），重启后重新索引，一个都不丢。
+在 GUI 里找到本工作区（如 `~/source/dsh/explorer`）的历史会话即可；新会话会自动读到
+该目录的 `AGENTS.md` → `HANDOFF-snapshot-ab.md`，知道从哪继续。
+
+### 场景 E · 临时查看另一个版本（有护栏，别裸跑）
+
+> 生产在跑的时候，你想看看另一个槽的界面（验收 / 对比）。**不要直接**
+> `~/.dsh/source/slot-b/bin/dsh web --port 3081` 裸跑 —— 用 `stage`，它会检测并要你确认。
+
+```sh
+$AB stage --slot b --port 3082            # 前台跑，Ctrl-C 停止
+$AB stage --slot a --port 3082 --keep --yes   # 后台跑（nohup），停止用它打印的命令
+```
+
+`stage` 的行为：
+- **先检测**：已有 web 实例在跑（如生产 3080）→ 打印警告"第二个实例共享 ~/.dsh，只读查看"；
+- **要求你 `--yes` 明确确认**才启动；不带 `--yes` 直接拒绝并退出；
+- 目标端口被占 → 直接报错让你换 `--port`；
+- `--keep` 后台跑并打印日志路径与停止命令（`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`）。
+
+⚠️ 临时实例期间：**只读**，别同时做写操作，看完就关。
+
+### 场景 F · 新版有问题 → 回滚（随时可回）
+
+```sh
+$AB rollback --yes     # current 指回 lastSwitch.previousTarget（上一版）+ 重启 web
+                       # 同样会断当前会话；重启后从 HANDOFF 继续
+$AB status             # phase=rolled-back, current 回到旧槽
+```
+
+回滚后旧版本（含本地 fix）完整保留在回滚槽；新快照的问题可以慢慢查，不影响生产。
+手动兜底（`ab.sh` 不可用时）：
+```sh
+ln -sfn ~/.dsh/source/slot-a ~/.dsh/source/current
+kill <web pid> && cd ~/source/test-fakechris && nohup dsh web &
+```
+
+### 场景 G · prepare 失败 → 排查
+
+`prepare` 任何一步失败都会：还原扩展 relink/tsconfig、`current` 不动、phase 回 `idle`。
+按输出定位：
+
+| 失败在哪 | 含义 | 怎么处理 |
+|---|---|---|
+| `pnpm install failed` | 依赖装不上（网络/锁文件） | 查网络；`$AB prepare` 重试（会自动 `clean -fdx` 全新安装） |
+| `harness build failed` | 新快照本身构建不过 | 这是**上游问题**，别切换；把 build 输出尾部报告给用户/上游 |
+| `extension ... FAILED` | 我们的扩展与快照 API 不兼容（typecheck/build/test 红） | 这就是验收的意义：**不切换**；在扩展仓库修兼容后重跑 prepare |
+| `web smoke FAILED` | 候选 web 起不来 / 端口被占 | 看冒烟日志（输出会打印）；端口被占换 `web.port` |
+
+常见修复后重试：`$AB prepare`（槽已在目标快照且有构建产物时会走**复用快路径**，只重跑扩展+冒烟）。
+
+### 场景 H · web 起不来 / 缺构建产物
+
+症状：`dsh web` 起来但页面空白 / 报缺 `lib`、`dist`。
+原因：新 worktree 的 `lib/` 与 `apps/web/dist` 是 gitignored 构建产物，**只 `pnpm install` 不够**。
+解决：
+```sh
+cd ~/.dsh/source/<槽> && pnpm run build     # = build:lib（tsc+tsdown）+ build:web（vite）
+```
+（`ab.sh init` 与 `ab.sh prepare` 都会自动做完整构建；只有手动建的 worktree 才需要这个。）
+
+### 场景 I · 端口冲突 / 双实例 / 锁被占
+
+```sh
+# 端口被占
+lsof -iTCP:3081 -sTCP:LISTEN        # 谁占着；stage/smoke 换 --port / web.port
+# 误开了第二个实例（忘了关）
+lsof -tiTCP:<port> -sTCP:LISTEN | xargs kill
+# 锁被占（另一个 A/B 操作进行中）
+# → 输出 "another A/B operation holds the lock"，等它结束或确认没有僵尸后重试
+#   锁文件：~/.dsh/source/.ab.lock（flock 语义；macOS 用 python3 fcntl 实现）
+```
+
+### 场景 J · 重启后会话"找不回来"
+
+- 会话不丢：`~/.dsh/sessions/` 按工作区存放，重启后重新索引。GUI 侧边栏应有全部历史。
+- 仍看不到？用 `dsh-session-recovery` skill（专门的诊断/修复流程）。
+- 想从断点继续：新会话里说"继续 snapshot-ab"，agent 会加载本 skill 并读
+  `HANDOFF-snapshot-ab.md` / `USER-GUIDE-snapshot-ab.md`。
+
+### 场景 K · `current` 或 launcher 坏了（手动兜底）
+
+```sh
+# current 丢了/指错
+ln -sfn ~/.dsh/source/slot-a ~/.dsh/source/current   # 指回已知好槽
+dsh --version                                        # 验证 launcher 能启动
+
+# PATH 上的 dsh 失效
+ls -l ~/.local/bin/dsh                               # 应 -> ~/.dsh/source/current/bin/dsh
+ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
+```
+
+---
+
+## 3. 命令速查
+
+| 命令 | 作用 | 动什么 |
+|---|---|---|
+| `$AB status` | 布局/槽/phase/运行中 web/扩展脏文件 | 只读 |
+| `$AB discover` | fetch 上游、列快照、算候选、diff 摘要 | 只 fetch |
+| `$AB init --yes` | 收编当前版本为 slot-a（worktree+install+**完整构建**），不重启 | current |
+| `$AB prepare [--slot a\|b] [--snapshot <ref>] [--skip-web] [--keep] [--force]` | 候选槽全流水线（构建+扩展+冒烟），不动生产 | 仅候选槽 |
+| `$AB verify` | 对 prepared 候选重跑扩展测试+冒烟 | 只读 |
+| `$AB stage --slot a\|b [--port N] [--keep]` | 临时起某槽到 staging 端口（检测到已有实例须 `--yes`） | 临时实例 |
+| `$AB switch --yes` | 原子切换 current → 候选 + 重启 web（**断会话**） | current + 服务 |
+| `$AB confirm` | 标记当前稳定，解锁下一天回收回滚槽 | state |
+| `$AB rollback --yes` | current 指回上一版 + 重启 web（**断会话**） | current + 服务 |
+| `$AB cleanup [--yes] [dir...]` | 列出/移除旧 worktree（绝不删当前槽） | worktrees |
+
+## 4. 布局与文件
+
+| 路径 | 是什么 |
+|---|---|
+| `~/.dsh/source/current` | 符号链接 → 当前生效槽（生产 = 它） |
+| `~/.dsh/source/slot-a` / `slot-b` | 两个槽（git worktree，主克隆的共享对象库） |
+| `~/source/test-fakechris` | 主克隆（对象库 + worktree 宿主，**从不作为运行目标**） |
+| `~/.dsh/source/ab-state.json` | 机制状态（slots/current/phase/evidence/history） |
+| `~/.dsh/source/ab-config.json` | 配置（upstream/扩展列表/web 端口） |
+| `~/.dsh/source/web.log` | 生产 web 重启日志 |
+| `~/.dsh/skills/dsh-snapshot-ab/` | 本 skill（SKILL.md=agent 手册，references/=设计+用户菜单） |
+
+## 5. 设计原则（为什么这样做）
+
+1. **`current` 符号链接 + git worktree**：与官方 `dsh-upgrade` 同构；切换是一次原子 `ln -sfn`，
+   主克隆只做对象库和 worktree 宿主，从不被运行。
+2. **扩展在槽外、按槽参数化**：扩展（如 dsh-track）通过 `DSH_SOURCE` / 生成的 `tsconfig.ab.json`
+   / node_modules 符号链接指向目标槽 → 能在**切换前**就对着新快照构建测试。
+3. **验收门**：install / build / 扩展测试 / web 冒烟全绿才算 prepared；验收不过不切换。
+4. **单实例原则**：两个槽共享 `~/.dsh`（sessions 是 append-only 共享文件、storages KV 是
+   单进程串行写链）——一个生产常驻，另一个槽只在 `stage`/冒烟时短起、只读、看完即关。
+5. **确认窗口**：`switch` 后必须 `confirm` 才允许回收回滚槽；回滚永远可用。
+
+## 6. 与相邻项目的关系
+
+- 官方 `dsh-upgrade`：rebase 到上游 master 的整合流程（偶尔用）；本机制是"官方每日快照 +
+  扩展外挂"的日常轮换，两者可共存。
+- 社区 `mainline-compat`（dsh-external-research）：插件 ↔ 当日 mainline 的**兼容性监控/报告**；
+  它答"插件还能不能用"，本机制答"怎么安全地切过去"。
+- `dshx-update-check`：commit SHA 对比**检测**更新（只检测）。
+
+---
+
+## 附：本次实测记录（2026-08-11）
+
+- `init` 收编旧版（be90233）为 slot-a，`current` 重指，生产未重启 ✅
+- `prepare`+`verify` 在 slot-b 构建 20260810 快照（4cdb149）：扩展 typecheck/build/**75 测试全过**、
+  冒烟 **HTTP 200** ✅
+- 验收门真实捕获上游变更：20260810 快照移除了 `dsh web --workspace-root` 标志（冒烟自动适配）✅
+- 修复的机制 bug：init 缺完整构建（见场景 H）、stage 缺共存护栏（见场景 E）、冒烟清理残留进程 ✅

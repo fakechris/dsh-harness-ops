@@ -1,0 +1,33 @@
+{
+  "upstream": "https://github.com/dsh2026/test-fakechris.git",
+  "snapshotRefPrefix": "refs/heads/snapshots/",
+  "sourcePathPrefix": "/Users/chris/.dsh/source/current",
+  "extensions": [
+    {
+      "name": "dsh-track",
+      "repo": "/Users/chris/source/dsh-involute",
+      "profile": "web",
+      "skills": ["skills/dsh-track"],
+      "relink": {
+        "node_modules/@deepseek-ai/dsh-session": "packages/core/session",
+        "node_modules/@deepseek-ai/dsh-storage": "packages/storage/storage",
+        "node_modules/@deepseek-ai/dsh-storage-json": "packages/storage/storage-json",
+        "node_modules/@deepseek-ai/dsh-system-prompt": "packages/core/system-prompt",
+        "node_modules/@deepseek-ai/dsh-tools": "packages/core/tools",
+        "node_modules/cordis": "vendor/cordis"
+      },
+      "tsconfig": "tsconfig.json",
+      "tsconfigOut": "tsconfig.ab.json",
+      "typecheck": "pnpm run typecheck",
+      "build": "pnpm run build",
+      "test": "pnpm test"
+    }
+  ],
+  "web": {
+    "port": 3081,
+    "host": "127.0.0.1",
+    "productionPort": 3080,
+    "startupTimeoutSec": 180,
+    "smokePaths": ["/"]
+  }
+}

@@ -203,6 +203,42 @@ EOF
   ab_log "  slot launcher -> $dir/bin/dsh (compiled CLI entry)"
 }
 
+# ab_verify_relinks — self-heal the extensions' node_modules relinks against
+# the CURRENT slot. A relink is an unowned symlink (ab-config is the only
+# source of truth): any rebuild of the extension's node_modules (pnpm
+# install, a prepare's restore path, an external cleanup) can silently drop a
+# link that was created manually or in an earlier prepare, and the next
+# `dsh web` then dies with ERR_MODULE_NOT_FOUND (2026-08-11 dsh-llm incident,
+# twice — once at cutover, once after an external cleanup). Calling this from
+# every ab.sh entry point + the web restart makes the links owned and
+# self-healing: a missing link is recreated before it can take the system
+# down. Relink targets resolve against the CURRENT slot (what production
+# boots), not any candidate.
+ab_verify_relinks() {
+  [ -n "${AB_CONFIG:-}" ] || return 0
+  local exts _e repo
+  exts=$(ab_config_get '.extensions // [] | length')
+  [ "$exts" -gt 0 ] || return 0
+  local cur_dir
+  cur_dir=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")
+  while read -r _e; do
+    [ -n "$_e" ] || continue
+    repo=$(printf '%s' "$_e" | jq -r '.repo')
+    [ -d "$repo" ] || continue
+    local entry link rel
+    while IFS= read -r entry; do
+      [ -n "$entry" ] || continue
+      link=$(printf '%s' "$entry" | jq -r '.key')
+      rel=$(printf '%s' "$entry" | jq -r '.value')
+      if [ ! -e "$repo/$link" ]; then
+        mkdir -p "$repo/$(dirname "$link")"
+        ln -sfn "$cur_dir/$rel" "$repo/$link"
+        ab_warn "  relink self-heal: $repo/$link -> $cur_dir/$rel (was missing)"
+      fi
+    done < <(printf '%s' "$_e" | jq -c '.relink // {} | to_entries[]')
+  done < <(ab_config_items '.extensions // [] | .[]')
+}
+
 # ---- misc -------------------------------------------------------------------
 
 ab_now() { date -u +%Y%m%dT%H%M%SZ; }

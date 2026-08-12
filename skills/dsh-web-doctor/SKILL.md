@@ -110,7 +110,7 @@ dsh-doctor --quiet            # 少输出
 | Flag | 作用 |
 |---|---|
 | （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
-| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
+| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ **实时显示 agent 的活动**（tail 它自己的 session 日志：推理/工具调用/生成）→ 读报告+日志推理根因 → 修复 → 验证 200 → 输出结论。健康时自动跳过（不烧 token）；`DSH_DOCTOR_AGENT_TIMEOUT` 可调超时（默认 300s），超时提示回退 `--fix` |
 | `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **LLM 凭据检测**（权限归一化；key 缺失则明确提示补，不臆造）→ **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
 

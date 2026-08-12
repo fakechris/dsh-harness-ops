@@ -49,9 +49,10 @@ REC="$SKILLS_DIR/dsh-session-recovery/scripts"
 PORT="${DSH_WEB_PORT:-3080}"
 REPORT="${DSH_DOCTOR_REPORT:-/tmp/dsh-doctor-report.txt}"
 
-FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0
+FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0; FLAG_FORCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --force) FLAG_FORCE=1; shift ;;
     --help|-h)
       cat <<'HELP'
 dsh web Doctor — 一键救火（web 挂了 / 起不来时用）
@@ -59,6 +60,7 @@ dsh web Doctor — 一键救火（web 挂了 / 起不来时用）
 用法（不用记，直接跑 dsh-doctor 就有交互菜单）：
   dsh-doctor                    交互菜单（推荐）
   dsh-doctor --agent            LLM 智能自愈（诊断+找根因+修复+拉起 web）
+  dsh-doctor --agent --force     强制 LLM 验收（即使诊断全绿也跑 LLM 交叉验证）
   dsh-doctor --fix --restart    确定性修复 + 拉起 web（不依赖 LLM）
   dsh-doctor --fix              只确定性修复
   dsh-doctor --quiet            少输出
@@ -493,8 +495,8 @@ PY
     info "== LLM brain =="
     # All green + web up => the LLM has nothing to fix; don't burn tokens on
     # a healthy system (the report it would read already says so).
-    if [ "$PROBLEMS" = "0" ] && [ "$code" = "200" ]; then
-      ok "diagnosis is all green and web is UP — LLM brain not needed"
+    if [ "$PROBLEMS" = "0" ] && [ "$code" = "200" ] && [ "$FLAG_FORCE" != "1" ]; then
+      ok "diagnosis is all green and web is UP — LLM brain not needed (use --force to force full LLM acceptance)"
     elif ! command -v dsh >/dev/null 2>&1; then
       err "'dsh' not on PATH — cannot launch the headless agent (fall back to: dsh-doctor --fix --restart)"
       exit 1
@@ -530,6 +532,9 @@ PY
    若 web 未起，用 restart-dsh-web.sh 或 nohup dsh web 拉起。
 6. 最终输出（简洁中文）：根因一句话、做了什么、当前 web 状态；
    若无法修复：卡在哪一步、缺什么、需要用户做什么。
+7. 若报告显示全绿（forced acceptance）：不要只复述报告——**独立交叉验证**
+   每一项（curl、launcher 链、relink、session、LLM key、守护进程），
+   确认健康后输出"验收通过"及你验证过的证据清单；发现报告漏掉的再报。
 
 约束：你是自愈 agent，web/GUI 可能不可用；只做必要修复，不动用户数据；
 不确定的操作先读报告/日志再决定。不要臆造；查不到就明说。
@@ -644,7 +649,8 @@ doctor_menu() {
       echo "                        //   relink/插件依赖/launcher/session/LLM 凭据"
       echo "  4) 退出               // Exit"
       echo "  5) 切换语言 English   // Switch language"
-      printf "  选择 [1-5]: "
+      echo "  6) 强制 LLM 验收（全绿也跑）// Force LLM acceptance"
+      printf "  选择 [1-6]: "
     else
       echo "  1) Quick check (diagnose only)          // 快速体检（只读）"
       echo "  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）："
@@ -655,7 +661,8 @@ doctor_menu() {
       echo "                                          //   session/LLM 凭据等已知配置故障"
       echo "  4) Exit                                 // 退出"
       echo "  5) Switch language 中文                 // 切换语言"
-      printf "  choose [1-5]: "
+      echo "  6) Force LLM acceptance (even if green)// 强制 LLM 验收（全绿也跑）"
+      printf "  choose [1-6]: "
     fi
     read -r choice || exit 0
     choice=${choice%$'\r'}   # pty/script input carries CR; strip it
@@ -664,10 +671,11 @@ doctor_menu() {
       2) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
       3) FLAG_FIX=1; FLAG_RESTART=1; FLAG_AGENT=0; doctor_run ;;
       4) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
+      6) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
       5) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
          [ "$LANG_CODE" = "zh" ] && echo "  已切换到中文（DSH_DOCTOR_LANG=zh 固定）" || echo "  switched to English (set DSH_DOCTOR_LANG=zh for default Chinese)"
          continue ;;
-      *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-5" || echo "  invalid choice, enter 1-5"; continue ;;
+      *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-6" || echo "  invalid choice, enter 1-6"; continue ;;
     esac
     echo
     [ "$LANG_CODE" = "zh" ] && printf "  按回车返回菜单..." || printf "  press Enter to return to the menu..."

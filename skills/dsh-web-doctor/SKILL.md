@@ -63,12 +63,14 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
                                           //   LLM 凭据等已知配置故障
   4) Exit                                 // 退出
   5) Switch language 中文                 // 切换语言
-  choose [1-5]:
+  6) Force LLM acceptance (even if green)// 强制 LLM 验收（全绿也跑）
+  choose [1-6]:
 ```
 
 - 不确定选什么 → **选 2**（大模型自动修复，推荐——能发现/修复任意插件问题）
 - 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**（机械修复配置问题）
-- 诊断全绿时 `--fix` 会**跳过修复**（"no problems — skipping repair"），不做无意义操作
+- **要强制 LLM 验收**（不信任自动跳过，即使全绿也要 LLM 独立交叉验证）→ **选 6**，或命令行 `dsh-doctor --agent --force`
+- 诊断全绿时 `--fix` 会**跳过修复**（"no problems — skipping repair"），不做无意义操作；`--agent` 同理，除非 `--force`
 - 菜单每次跑完回到菜单，按 `4` 退出
 
 ## LLM 配置修复（检查什么 / 处理什么 / 工作流）
@@ -98,7 +100,8 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 
 ```sh
 dsh-doctor                    # 交互菜单（终端下）；脚本/管道下 = 只读诊断
-dsh-doctor --agent            # = 菜单 2（LLM 主脑）
+dsh-doctor --agent            # = 菜单 2（LLM 主脑；全绿时自动跳过）
+dsh-doctor --agent --force    # = 菜单 6（强制 LLM 验收，全绿也跑）
 dsh-doctor --fix --restart    # = 菜单 3（确定性修复 + 拉起）
 dsh-doctor --fix              # 只确定性修复，不拉起
 dsh-doctor --quiet            # 少输出

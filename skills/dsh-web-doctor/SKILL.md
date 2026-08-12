@@ -39,8 +39,14 @@ skills 的脚本，**不依赖任何 web 进程**。
 
 ## 用法（用户角度：一条短命令，无参数即交互菜单）
 
-装好（`install.sh`）后，`dsh-doctor` 就在 PATH 上（`~/.local/bin/dsh-doctor`）。**web 挂的时候
-直接在终端敲 `dsh-doctor`，不用记任何参数**——它会显示一个菜单：
+**入口（两个都行，挑顺手的）**：
+
+```sh
+dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/dsh-doctor，与 dsh 同目录）
+~/.dsh/source/current/bin/dsh-doctor # ② 槽 bin 内（prepare 后自动保留）
+```
+
+**web 挂的时候直接敲 `dsh-doctor`（不带任何路径），不用记参数**——它会显示菜单：
 
 ```
 ==============================================================

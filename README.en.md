@@ -83,16 +83,35 @@ Convention: `$AB` below means `~/.dsh/skills/dsh-snapshot-ab/scripts/ab.sh` (pre
 ## 1. Install
 
 ```sh
-# 1) Install the skills into the default scan directory
-mkdir -p ~/.dsh/skills && cp -r skills/dsh-snapshot-ab ~/.dsh/skills/
-cp -r skills/dsh-session-recovery ~/.dsh/skills/   # session-recovery skill (diagnose/repair session-log corruption)
+# One command: 3 skills into ~/.dsh/skills + the dsh-restart-recover bundle
+# into the web profile
+git clone https://github.com/dsh-external/dsh-harness-ops.git
+cd dsh-harness-ops
+bash scripts/install.sh
 
-# 2) Configure (auto-read on first run; see skills/dsh-snapshot-ab/references/ab-config.example.json)
+# Optional: self-healing daemon (launchd/systemd, relaunches web ~10s after death)
+bash skills/dsh-web-guard/scripts/install.sh
+
+# Configure (auto-read on first run; see skills/dsh-snapshot-ab/references/ab-config.example.json)
 #    Usually you only confirm extensions (extension repo paths) and the web port in ab-config.json
 vi ~/.dsh/source/ab-config.json
 
-# 3) Verify
+# Verify
 $AB status
+```
+
+> **Versioning & release**: this repository IS the distribution unit (GitHub is
+> the distribution — **no npm publish**, official stance in
+> [`docs/RELEASE.md`](docs/RELEASE.md)). Version = root `VERSION` file + git tag
+> `vX.Y.Z` + [`CHANGELOG.md`](CHANGELOG.md) (SemVer).
+> **Updates need no manual packaging**: `bash scripts/update.sh` does
+> `git pull → rebuild plugin lib → reinstall skills/bundle` in one step
+> (the bundle plugin ships a `prepare` script, so a git fetch of sources
+> rebuilds itself on install).
+
+```sh
+# Every update afterwards
+cd dsh-harness-ops && bash scripts/update.sh
 ```
 
 `ab-config.json` key fields: `upstream` (official repo), `extensions[]` (extension list:

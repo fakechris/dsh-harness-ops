@@ -53,6 +53,54 @@ dsh-harness-ops (this repo)
 - Daily upgrade: `$AB discover → prepare → switch --yes → confirm`
 - Self-heal check: `kill $(lsof -ti :3080)` → auto-restart within 10s → session continues (no manual step)
 
+## 🚑 Total-outage fallback: dsh-web-doctor (one-shot rescue when web/A/B are all down)
+
+> Why it exists: two incidents on 2026-08-11 (web would not boot after a switch; an extension
+> link was wiped externally) cost hours of hands-on recovery — every step (read the last session
+> activity → find the root cause → fix relinks → fix sessions → relaunch web) is scriptable, and
+> what was missing is a one-command entry that does NOT depend on the web. Full motivation and
+> the incident chain: [`docs/web-doctor-motivation.md`](docs/web-doctor-motivation.md).
+
+**When to use**: web (3080) is down / won't boot / both A/B slots are broken / GUI and agent are
+unavailable (the agent lives inside the web process). It is **out-of-band**: terminal + local
+tools (node/zstd/jq/curl/ps/lsof), **no web process, no extension bundle loaded**.
+
+**How to use** (user-first, no flags to remember):
+
+```sh
+dsh-doctor                    # interactive menu (English default; option 5 switches to Chinese)
+```
+
+```
+==============================================================
+  dsh web Doctor — one-shot rescue        // dsh web 医生 — 一键救火
+  web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
+==============================================================
+  1) Quick check (diagnose only)          // 快速体检（只读）
+  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读诊断+日志
+                                          //   推理根因，发现/修复任意插件问题
+  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
+     incl. relaunch web                  //   插件依赖/launcher/session/LLM 凭据等
+                                          //   已知配置故障
+  4) Exit                                 // 退出
+  5) Switch language 中文                 // 切换语言
+```
+
+**Layered design (why)**:
+- **Deterministic layer** (option 3): sensors + actuators — seconds, zero LLM cost, runs even
+  when everything is broken; covers known config faults (relinks / plugin deps / launcher /
+  sessions / LLM credentials); skips repair automatically when the diagnosis is all green
+- **LLM brain** (option 2): a one-shot `dsh --profile headless` agent reads the report + logs
+  and reasons about the root cause — it can find/fix what deterministic rules cannot (DSH core
+  incompatibility, a plugin that scrambled its config, new failure modes); headless does NOT
+  load the web's extension bundles, so extension faults don't stop it
+
+**9 diagnosis checks**: web health / launcher chain / extension relinks / slot bootability /
+session file-layer (97 logs) / web.log (classified: historical vs current fault) / profile
+bundle deps (any plugin) / LLM config (.env key) / last activity in recent sessions.
+
+---
+
 **Official-change digest (daily analysis)**: the official repo ships **no CHANGELOG**, but it
 **requires** an **Agent Note** per non-trivial change (`.agents/notes/implemented/<class>/
 yyyy-mm-dd-<topic>.md`, class ∈ feature / bug-fix / simplification / architecture / process /

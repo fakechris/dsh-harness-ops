@@ -97,6 +97,68 @@ ext_install_skills() {
   done
 }
 
+# ext_check_runtime_deps <ext-json> <candidate-dir> <ext-repo>
+#   Production node ESM resolves the extension's @deepseek-ai/* / cordis imports
+#   ONLY through the extension's node_modules (ab-config relink links). The
+#   build/test gates resolve the same specifiers through tsconfig paths and
+#   vitest aliases — which do NOT exist at runtime — so a package missing from
+#   the relink map passes every gate and then kills the server with
+#   ERR_MODULE_NOT_FOUND after cutover (2026-08-11 dsh-llm incident: import was
+#   added in the extension, tsconfig/vitest already listed it, ab-config.relink
+#   did not). Scan the built lib for bare specifiers and fail the prepare with a
+#   precise missing-link list. lib/client.js is excluded: the client bundle is
+#   injected by the profile pnpm closure, not the relink map.
+ext_check_runtime_deps() {
+  local ext="$1" cand="$2" repo="$3"
+  local name libdir
+  name=$(printf '%s' "$ext" | jq -r '.name')
+  libdir="$repo/lib"
+  [ -d "$libdir" ] || { ab_warn "  runtime-deps: no $libdir — skipping"; return 0; }
+  local missing="" spec tmpfile
+  tmpfile="$(mktemp -t dsh-ab-extdeps.XXXXXX)"
+  # NB: a heredoc inside <( ) breaks bash parsing — scan to a temp file instead.
+  python3 - "$libdir" > "$tmpfile" <<'PY' || { rm -f "$tmpfile"; return 1; }
+import os, re, sys
+root = sys.argv[1]
+pat = re.compile(r"""(?:^|\b)(?:import|export)\s+(?:[^'"\n]*?\s+from\s+)?['"]([^'"]+)['"]""")
+pat2 = re.compile(r"""import\s*\(\s*['"]([^'"]+)['"]\s*\)""")
+seen = set()
+for base, _dirs, files in os.walk(root):
+    for f in files:
+        if not f.endswith(".js") or f == "client.js":
+            continue
+        if "/types/" in base or base.endswith("/types"):
+            continue
+        p = os.path.join(base, f)
+        try:
+            text = open(p, encoding="utf-8").read()
+        except OSError:
+            continue
+        for m in list(pat.finditer(text)) + list(pat2.finditer(text)):
+            s = m.group(1)
+            if s and (s.startswith("@deepseek-ai/") or s == "cordis"):
+                seen.add(s)
+for s in sorted(seen):
+    print(s)
+PY
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    if [ ! -e "$repo/node_modules/$spec" ]; then
+      missing="$missing $spec"
+    fi
+  done < "$tmpfile"
+  rm -f "$tmpfile"
+  if [ -n "$missing" ]; then
+    ab_err "  runtime-deps: $name imports packages missing from $repo/node_modules (production node ESM will fail at boot):"
+    for m in $missing; do ab_err "    $m"; done
+    ab_err "  fix: add each to ab-config.json extensions[].relink, e.g. \"node_modules/$m\": \"packages/<pkg-dir>\""
+    ab_err "  (build/test pass via tsconfig paths / vitest aliases, so only this gate catches it)"
+    return 1
+  fi
+  ab_ok "  runtime-deps: all @deepseek-ai/cordis imports resolvable via node_modules"
+  return 0
+}
+
 # ext_prepare <ext-json> <candidate-dir>
 #   Attach + build + test one extension against the candidate. On failure,
 #   restores relink + tsconfig and returns non-zero.
@@ -113,6 +175,7 @@ ext_prepare() {
   if ! ext_run "$ext" "$cand" "$repo" "typecheck"; then ok=0; fi
   if [ "$ok" = "1" ] && ! ext_run "$ext" "$cand" "$repo" "build"; then ok=0; fi
   if [ "$ok" = "1" ] && ! ext_run "$ext" "$cand" "$repo" "test"; then ok=0; fi
+  if [ "$ok" = "1" ] && ! ext_check_runtime_deps "$ext" "$cand" "$repo"; then ok=0; fi
   if [ "$ok" = "1" ]; then
     ext_install_skills "$ext" "$repo"
     ab_ok "extension $name OK against $cand"

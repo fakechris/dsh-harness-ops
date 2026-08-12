@@ -209,7 +209,13 @@ $AB prepare                # auto-picks the non-current slot; can also use expli
                            # pipeline: checkout snapshot → pnpm install --frozen-lockfile
                            #        → build:lib + build:web
                            #        → extension relink + generate tsconfig.ab.json + typecheck/build/test (DSH_SOURCE=candidate slot)
-                           #        → candidate bin/dsh web smoke on staging port (3081), HTTP 200
+                           #        → extension runtime-deps gate: scan built lib imports vs node_modules,
+                           #          fail on missing links (build/test resolve via tsconfig paths / vitest
+                           #          aliases and silently hide gaps that production node ESM will hit)
+                           #        → auto-materialize a slot launcher wrapper when bin/dsh is absent
+                           #          (20260811+ snapshots removed bin/dsh)
+                           #        → candidate smoke on staging port (3081), HTTP 200, boot path identical
+                           #          to production (pure node ESM, not tsx)
                            # all green → phase=prepared, evidence written to ab-state.json
                            # any step fails → restore extension relink, current untouched, phase back to idle (see Scenario G)
 

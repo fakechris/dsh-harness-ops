@@ -354,6 +354,9 @@ cmd_prepare() {
     if ! acc_install "$dir"; then ab_warn "pnpm install failed"; ab_fail_prepare "$slot"; fi
     if ! acc_build "$dir" "$FLAG_SKIP_WEB"; then ab_warn "harness build failed"; ab_fail_prepare "$slot"; fi
   fi
+  # 20260811+ snapshots removed bin/dsh; without a slot launcher the chain
+  # ~/.local/bin/dsh -> current/bin/dsh breaks after cutover. Materialize it.
+  ab_ensure_slot_launcher "$dir"
 
   # --- extensions (build + test against THIS candidate) --------------------
   local exts _e ev=()
@@ -508,6 +511,21 @@ cmd_switch() {
   ab_log "  verifying launcher boots from new current..."
   # shellcheck disable=SC2086
   $(ab_boot_cmd "$dir") --version >/dev/null 2>&1 || { ab_warn "launcher boot failed — rolling back symlink immediately"; ln -sfn "$prev_target" "$AB_SOURCE/current"; ab_die "rollback symlink restored to $prev_target"; }
+  # the `dsh` command itself must keep working after cutover: its chain
+  # (command -v dsh -> current/bin/dsh) resolves against the NEW current.
+  # 20260811+ snapshots removed bin/dsh; prepare materializes a slot launcher,
+  # so this should hold — fail loudly instead of shipping a broken `dsh`.
+  local _dsh _dsh_resolved
+  _dsh=$(command -v dsh || true)
+  if [ -n "$_dsh" ]; then
+    _dsh_resolved=$(resolve_link "$_dsh")
+    ab_log "  launcher chain: $_dsh -> $_dsh_resolved (current -> $dir)"
+    if [ -x "$dir/bin/dsh" ] || [ -x "$dir/apps/cli/lib/bin.js" ]; then
+      ab_log "  launcher chain OK: bootable entry present in new current"
+    else
+      ab_warn "  launcher chain will break: $dir has no bin/dsh and no lib/bin.js — run 'ab.sh prepare --slot $slot' to materialize the slot launcher"
+    fi
+  fi
   ab_state_set --arg slot "$slot" --arg prev "$prev_slot" --arg prevtarget "$prev_target" --arg at "$at" --arg snap "$(ab_state_get '.candidateSnapshot')" '
     .current = $slot | .phase = "switched" | .confirmed = false
     | .lastSwitch = { at: $at, from: $prev, to: $slot, previousTarget: $prevtarget, snapshot: $snap }
@@ -581,6 +599,13 @@ ab_restart_web() {
   # node bin dir from the current shell and use the resolved launcher path.
   local node_bin="" boot_dir
   command -v node >/dev/null 2>&1 && node_bin=$(dirname "$(command -v node)")
+  if [ -z "$node_bin" ]; then
+    # fallback when `node` is not on this shell's PATH (nohup subshells and
+    # launchd/guard contexts often have a minimal PATH): common install dirs.
+    for _nb in /opt/homebrew/bin /usr/local/bin; do
+      [ -x "$_nb/node" ] && { node_bin="$_nb"; break; }
+    done
+  fi
   log="$AB_SOURCE/web.log"
   # restart boots the NEW current (the symlink was already cut over)
   boot_dir=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")

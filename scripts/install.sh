@@ -18,7 +18,7 @@ echo "[dsh-harness-ops] installing v$VERSION from $ROOT"
 # --- 1) skills --------------------------------------------------------------
 mkdir -p "$SKILLS_DST"
 installed=0
-for s in dsh-snapshot-ab dsh-web-guard dsh-session-recovery; do
+for s in dsh-snapshot-ab dsh-web-guard dsh-session-recovery dsh-web-doctor; do
   src="$ROOT/skills/$s"
   [ -d "$src" ] || { echo "  warn: skill dir missing: $src"; continue; }
   rm -rf "$SKILLS_DST/$s"

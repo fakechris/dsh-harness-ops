@@ -10,10 +10,12 @@
 > | **`skills/dsh-snapshot-ab`** | skill | 官方每日快照 A/B 双槽轮换 —— 升级"切对版本" |
 > | **`skills/dsh-web-guard`** | skill | 自愈守护 —— web 死后 10s 自动拉起 |
 > | **`skills/dsh-session-recovery`** | skill | 会话丢失诊断 —— “0 sessions”/日志损坏时的定位与无损修复 |
+> | **`skills/dsh-web-doctor`** | skill | out-of-band 医生 —— web/A/B 全挂时终端一键诊断→修复→拉起 |
 > | **`plugins/dsh-restart-recover`** | cordis 插件 | 重启续接 —— 被中断的 turn 自动继续 |
 >
-> 合起来回答四个问题：**web 挂了谁拉起？拉起后工作继续吗？会话看起来丢了怎么办？官方发新版本怎么安全切换？**
-> 三者互补：`ab.sh switch/rollback` 杀 web → `dsh-web-guard` 拉起 → `dsh-restart-recover` 续接。
+> 合起来回答五个问题：**web 挂了谁拉起？拉起后工作继续吗？会话看起来丢了怎么办？官方发新版本怎么安全切换？A/B 都挂了怎么一键救？**
+> 三者互补：`ab.sh switch/rollback` 杀 web → `dsh-web-guard` 拉起 → `dsh-restart-recover` 续接；
+> 全挂兜底走 `dsh-web-doctor`（终端 `doctor.sh --fix --restart`）。
 >
 > > 曾用名 `dsh-skill-snapshot-ab`（2026-08-11 更名）—— 仓库从"纯 AB 轮换 skill"长成了
 > > "skill + 插件"混合工具箱，名字不再贴切。skill 目录名 `dsh-snapshot-ab` 保持不变
@@ -32,7 +34,9 @@ dsh-harness-ops（本仓库）
 ├── skills/dsh-web-guard/          自愈守护：launchd/systemd 托管，端口空闲 10s 内拉起 web
 │   └── scripts/install.sh         跨平台安装（macOS launchd / Linux systemd）
 ├── skills/dsh-session-recovery/  会话丢失诊断：0 sessions/日志损坏 → 定位 → 无损修复 → 重启
-│   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions
+│   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
+├── skills/dsh-web-doctor/        out-of-band 医生：web/A/B 全挂时终端一键诊断→修复→拉起
+│   └── scripts/                   doctor.sh / session-last-activity.mjs
 └── plugins/dsh-restart-recover/   重启续接插件：agent/created 检测 interrupted → 自动注入续接
     └── src/index.ts               cordis 插件（监听 agent/created，零 dsh-track 依赖）
 ```

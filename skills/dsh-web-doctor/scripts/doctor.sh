@@ -205,19 +205,33 @@ PY
   if [ -f "$DSH_SOURCE/ab-config.json" ]; then
     echo
     say "== extension relinks =="
-    python3 - "$DSH_SOURCE/ab-config.json" "$CURRENT" <<'PY' | while IFS= read -r line; do case "$line" in MISSING:*) err "${line#MISSING:}"; note_problem;; *) say "  $line";; esac; done
+    relink_out=$(python3 - "$DSH_SOURCE/ab-config.json" "$CURRENT" <<'PY'
 import json, os, sys
 cfg, cur = sys.argv[1], sys.argv[2]
 d = json.load(open(cfg))
+miss = 0
 for ext in d.get('extensions', []):
     repo = ext.get('repo', '')
     for link, rel in (ext.get('relink') or {}).items():
         target = f"{repo}/{link}"
         if not os.path.exists(target):
             print(f"MISSING: relink {target} (needs -> {cur}/{rel})")
+            miss = 1
         else:
             print(f"ok: {link} -> {rel}")
+sys.exit(1 if miss else 0)
 PY
+    )
+    rc=$?
+    if [ -n "$relink_out" ]; then
+      while IFS= read -r line; do
+        case "$line" in
+          MISSING:*) err "$line" ;;
+          *) say "  $line" ;;
+        esac
+      done <<< "$relink_out"
+    fi
+    [ "$rc" = "0" ] || note_problem
   fi
 
   # 3d. slot bootable
@@ -294,7 +308,7 @@ PY
     say "== profile bundles dependency check =="
     while IFS= read -r line; do
       case "$line" in
-        FIXABLE:*) warn "  $line" ;;
+        FIXABLE:*) warn "  $line"; note_problem ;;
         MISSING:*) err "  $line"; note_problem ;;
         ok:*) say "  $line" ;;
       esac
@@ -476,15 +490,18 @@ PY
   #        the LLM reads the new symptoms and reasons its way out.
   if [ "$FLAG_AGENT" = "1" ]; then
     echo
-    info "== LLM brain: handing the report to a one-shot headless agent =="
-    if ! command -v dsh >/dev/null 2>&1; then
+    info "== LLM brain =="
+    # All green + web up => the LLM has nothing to fix; don't burn tokens on
+    # a healthy system (the report it would read already says so).
+    if [ "$PROBLEMS" = "0" ] && [ "$code" = "200" ]; then
+      ok "diagnosis is all green and web is UP — LLM brain not needed"
+    elif ! command -v dsh >/dev/null 2>&1; then
       err "'dsh' not on PATH — cannot launch the headless agent (fall back to: dsh-doctor --fix --restart)"
       exit 1
-    fi
-    if ! dsh --profile headless --help >/dev/null 2>&1; then
+    elif ! dsh --profile headless --help >/dev/null 2>&1; then
       err "'dsh --profile headless' unavailable — LLM brain cannot start (fall back to: dsh-doctor --fix --restart)"
       exit 1
-    fi
+    else
     AGENT_TASK=$(cat <<'PROMPT'
 你是 dsh web 的 out-of-band 自愈 agent（one-shot）。web（3080）挂了或状态异常，
 由你诊断根因、修复、把 web 拉回来。headless 模式下你可用工具读文件/执行命令。
@@ -518,10 +535,63 @@ PY
 不确定的操作先读报告/日志再决定。不要臆造；查不到就明说。
 PROMPT
 )
-    ok "launching: dsh --profile headless <self-heal task> (report: $REPORT)"
-    dsh --profile headless "$AGENT_TASK" 2>&1 | sed 's/^/  [agent] /'
+    # headless is one-shot: it prints ONLY the final message, so a long
+    # self-heal run looks frozen. Give a clear wait notice + a heartbeat,
+    # run with full-access permission (the user invoking the doctor IS the
+    # self-heal authorization), and an outer timeout so a stuck agent can
+    # never hang the user forever.
+    ok "launching headless LLM agent (report: $REPORT)"
+    say "  watching its live session log below; final answer appears when it finishes (1-3 min typical):"
+    # the agent writes its own session log as it works (reasoning chunks,
+    # tool calls, generated text) — tail that so the user SEES it working.
+    before=$(ls -t "$HOME"/.dsh/sessions/*/*/session.jsonl.zstd 2>/dev/null | head -1)
+    ( DSH_PERMISSION_MODE=danger-full-access dsh --profile headless "$AGENT_TASK" 2>&1 | sed 's/^/  [agent] /' ) &
+    APID=$!
+    waited=0; AGENT_TIMEOUT="${DSH_DOCTOR_AGENT_TIMEOUT:-300}"
+    while kill -0 "$APID" 2>/dev/null && [ "$waited" -lt "$AGENT_TIMEOUT" ]; do
+      sleep 4; waited=$((waited+4))
+      # live activity: the newest session log (the agent's own) — show what
+      # it is doing right now (reasoning / tool / text generation)
+      newest=$(ls -t "$HOME"/.dsh/sessions/*/*/session.jsonl.zstd 2>/dev/null | head -1)
+      if [ -n "$newest" ] && [ "$newest" != "$before" ]; then
+        act=$(zstd -dc "$newest" 2>/dev/null | tail -1 | python3 -c '
+import json, sys
+try:
+    d = json.loads(sys.stdin.read())
+    t = d.get("type", "?")
+    data = d.get("data", {}) or {}
+    txt = ""
+    if t in ("assistant/chunk", "text-chunks"):
+        txt = (data.get("text", "") or "")[:70]
+    elif t == "reasoning-chunks":
+        txt = "thinking..."
+    elif t == "tool/call":
+        txt = "tool " + str(data.get("name", "?"))
+    elif t == "tool/result":
+        txt = "tool result"
+    elif t == "user/message":
+        c = data.get("content", "")
+        txt = (str(c)[:70] if not isinstance(c, list) else "prompt issued")
+    suffix = (": " + txt) if txt else ""
+    print(t + suffix)
+except Exception:
+    print("working...")
+' 2>/dev/null)
+        say "  [live] $act"
+      else
+        say "  ...agent working (${waited}s)"
+      fi
+    done
+    if kill -0 "$APID" 2>/dev/null; then
+      err "LLM agent timed out after ${waited}s (DSH_DOCTOR_AGENT_TIMEOUT) — it may be stuck; fall back to: dsh-doctor --fix --restart"
+      kill "$APID" 2>/dev/null
+    else
+      wait "$APID" 2>/dev/null || true
+      say "  LLM agent finished (~${waited}s)"
+    fi
     echo
-    info "LLM brain finished — verify with: dsh-doctor  (or curl http://127.0.0.1:3080/)"
+    info "verify with: dsh-doctor  (or curl http://127.0.0.1:3080/)"
+    fi   # end of the "problems found / web down -> run LLM brain" branch
   fi
 
   # --- 6. report ---------------------------------------------------------------

@@ -47,6 +47,50 @@ dsh-harness-ops（本仓库）
 - 每日升级：`$AB discover → prepare → switch --yes → confirm`
 - 自愈验证：`kill $(lsof -ti :3080)` → 10s 内自动拉起 → 会话自动继续（无需手动）
 
+## 🚑 全挂兜底：dsh-web-doctor（web/A/B 全挂时的一键救火）
+
+> 为什么有它：2026-08-11 两次事故（切换后 web 起不来、扩展链接被外部清理）现场修复耗了数小时——
+> 每一步（查 session 最后事件 → 找根因 → 修 relink → 修会话 → 拉起 web）其实都能脚本化，缺的
+> 是一个**不依赖 web 的一键入口**。完整动机与事故链见 [`docs/web-doctor-motivation.md`](docs/web-doctor-motivation.md)。
+
+**什么时候用**：web（3080）挂了 / 起不来 / A/B 双槽都坏 / GUI 和 agent 都不可用
+（agent 由 web 托管，web 挂 = 没有 agent 可用）。它是 **out-of-band** 的：纯终端 + 本机工具
+（node/zstd/jq/curl/ps/lsof），**不依赖 web 进程、不加载任何扩展**。
+
+**怎么用**（用户角度，不用记参数）：
+
+```sh
+dsh-doctor                    # 交互菜单（默认英文，菜单里选 5 切中文）
+```
+
+```
+==============================================================
+  dsh web Doctor — one-shot rescue        // dsh web 医生 — 一键救火
+  web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
+==============================================================
+  1) Quick check (diagnose only)          // 快速体检（只读）
+  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读诊断+日志
+                                          //   推理根因，发现/修复任意插件问题
+  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
+     incl. relaunch web                  //   插件依赖/launcher/session/LLM 凭据等
+                                          //   已知配置故障
+  4) Exit                                 // 退出
+  5) Switch language 中文                 // 切换语言
+```
+
+**分层设计**（为什么这样）：
+- **确定性层**（菜单 3）：传感器+执行器——秒级、零 LLM 成本、web 挂得再彻底也能跑；
+  覆盖已知配置故障（relink/插件依赖/launcher/session/LLM 凭据）；诊断全绿时自动跳过修复
+- **LLM 大脑**（菜单 2）：`dsh --profile headless` 起 one-shot agent，读报告+日志推理根因，
+  **能发现/修复确定性规则想不到的问题**（DSH 核心不兼容改动、插件配置被改乱、新故障模式）；
+  headless 不加载 web 的扩展 bundle，所以扩展故障不影响它
+
+**诊断 9 项**：web 健康 / launcher 链 / 扩展 relink / 槽可启动 / session 文件层（97 个日志）/
+web.log（分类历史残留 vs 当前故障）/ profile bundles 依赖（任意插件）/ LLM 配置（.env key）/
+最近会话最后发生的事。
+
+---
+
 **官方改动提炼（每日分析）**：官方仓库没有 CHANGELOG 文档，但**强制**每个非平凡改动写一篇
 **Agent Note**（`.agents/notes/implemented/<class>/yyyy-mm-dd-<topic>.md`，class ∈ feature /
 bug-fix / simplification / architecture / process / testing，每篇带 `.zh.md` + `.i18n.yaml`，

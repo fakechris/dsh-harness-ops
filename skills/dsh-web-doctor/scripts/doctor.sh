@@ -238,6 +238,24 @@ PY
     done < <(node "$PDEPS" 2>&1)
   fi
 
+  # 3i. LLM credentials health — web AND headless both need a working LLM
+  #     config; the credential chain is: process env > cwd/.env >
+  #     $DSH_HOME/.env (DEEPSEEK_API_KEY). We never print the key itself.
+  echo
+  say "== LLM config =="
+  if [ -f "$HOME/.dsh/.env" ]; then
+    if grep -qE '^DEEPSEEK_API_KEY=.+$' "$HOME/.dsh/.env" 2>/dev/null; then
+      ok "  DEEPSEEK_API_KEY present in ~/.dsh/.env"
+    else
+      err "  ~/.dsh/.env exists but DEEPSEEK_API_KEY is empty/missing"
+      note_problem
+    fi
+  else
+    err "  ~/.dsh/.env missing — no LLM credentials (web/headless cannot call an LLM)"
+    note_problem
+  fi
+  [ -f "$HOME/.dsh/settings.yaml" ] && say "  settings.yaml present" || warn "  settings.yaml missing (non-fatal)"
+
   # 3h. what happened last (most recently active sessions)
   echo
   say "== last activity in recent sessions =="
@@ -316,7 +334,23 @@ LAUNCHER
       done < <(node "$PDEPS" 2>&1)
     fi
 
-    # --- 4e. verify fixes (re-check what we just repaired) ---------------------
+    # 4e. LLM credentials: fix what we can (permissions), honest handoff for
+    #     what we cannot (a key is user-owned; doctor never fabricates one)
+    if [ -f "$HOME/.dsh/.env" ]; then
+      chmod 600 "$HOME/.dsh/.env" 2>/dev/null
+      if ! grep -qE '^DEEPSEEK_API_KEY=.+$' "$HOME/.dsh/.env" 2>/dev/null; then
+        warn "  DEEPSEEK_API_KEY empty/missing in ~/.dsh/.env — doctor cannot invent a key."
+        warn "  add it: echo 'DEEPSEEK_API_KEY=<your-key>' >> ~/.dsh/.env   (then restart web)"
+        note_problem
+      else
+        ok "  DEEPSEEK_API_KEY present (permissions normalized to 600)"
+      fi
+    else
+      warn "  ~/.dsh/.env missing — create it: echo 'DEEPSEEK_API_KEY=<your-key>' > ~/.dsh/.env"
+      note_problem
+    fi
+
+    # --- 4f. verify fixes (re-check what we just repaired) ---------------------
     echo
     info "== verify fixes =="
     PROBLEMS=0
@@ -397,8 +431,11 @@ PY
 由你诊断根因、修复、把 web 拉回来。headless 模式下你可用工具读文件/执行命令。
 
 步骤：
+0. 先看报告里的 LLM config 段：若 DEEPSEEK_API_KEY 缺失/为空（~/.dsh/.env），
+   提示用户补 key（echo 'DEEPSEEK_API_KEY=<key>' >> ~/.dsh/.env），不要臆造凭据；
+   key 在则继续。
 1. 读 /tmp/dsh-doctor-report.txt —— dsh-doctor 的确定性体检报告
-   （web/launcher/relink/槽可启动/session 文件层/web.log 尾部/最近活动）。
+   （web/launcher/relink/槽可启动/session 文件层/web.log 尾部/LLM config/最近活动）。
 2. 读 ~/.dsh/skills/dsh-web-doctor/SKILL.md —— 可用修复原语说明。
 3. 需要更深入时：node ~/.dsh/skills/dsh-web-doctor/scripts/session-last-activity.mjs
    看最近会话最后发生的事；tail ~/.dsh/source/web.log。
@@ -443,31 +480,68 @@ PROMPT
 }
 
 # ---------------------------------------------------------------------------
-# doctor_menu — user-first interactive menu. One glance, no flags to remember.
+# doctor_menu — user-first interactive menu (bilingual: EN default, switch in
+# the menu or via DSH_DOCTOR_LANG=zh). One glance, no flags to remember.
 # ---------------------------------------------------------------------------
+LANG_CODE="${DSH_DOCTOR_LANG:-en}"
+
+menu_status() {
+  local code="$1"
+  if [ "$LANG_CODE" = "zh" ]; then
+    [ "$code" = "200" ] && printf '✅ 正常' || printf '❌ 异常 / 未起'
+  else
+    [ "$code" = "200" ] && printf '✅ healthy' || printf '❌ down / not responding'
+  fi
+}
+
 doctor_menu() {
   while true; do
     code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 3 "http://127.0.0.1:$PORT/" 2>/dev/null || echo 000)
     echo
     echo "=============================================================="
-    echo "  dsh web Doctor — 一键救火"
-    echo "  当前 web(:$PORT): $([ "$code" = "200" ] && printf '✅ 正常' || printf '❌ 异常 / 未起')"
+    if [ "$LANG_CODE" = "zh" ]; then
+      echo "  dsh web 医生 — 一键救火"
+      echo "  当前 web(:$PORT): $(menu_status "$code")"
+    else
+      echo "  dsh web Doctor — one-shot rescue"
+      echo "  web(:$PORT): $(menu_status "$code")"
+    fi
     echo "=============================================================="
-    echo "  1) 快速体检（只读，几秒）        — 看系统哪里有问题"
-    echo "  2) LLM 智能自愈（推荐）          — 自动诊断+找根因+修复+拉起 web"
-    echo "  3) 确定性修复+拉起（不依赖 LLM） — 规则保底，web 挂得再彻底也能跑"
-    echo "  4) 退出"
-    printf "  选择 [1-4]: "
+    if [ "$LANG_CODE" = "zh" ]; then
+      echo "  1) 快速体检（只读）   // Quick check (diagnose only)"
+      echo "  2) LLM 智能自愈（推荐）// LLM self-heal (needs LLM configured)"
+      echo "  3) 确定性修复+拉起    // Deterministic fix + relaunch (no LLM:"
+      echo "                        //   relinks / launcher / sessions; NOT"
+      echo "                        //   LLM credentials — those need you or 2)"
+      echo "  4) 退出               // Exit"
+      echo "  5) 切换语言 English   // Switch language"
+      printf "  选择 [1-5]: "
+    else
+      echo "  1) Quick check (diagnose only)          // 快速体检（只读）"
+      echo "  2) LLM self-heal (recommended)          // LLM 智能自愈（需 LLM 配置正常）"
+      echo "  3) Deterministic fix + relaunch (no LLM)// 确定性修复+拉起（覆盖 relink/"
+      echo "                                          // launcher/session 等已知故障；"
+      echo "                                          // 不能修 LLM 凭据缺失——那需要"
+      echo "                                          // 人工补 key 或选 2）"
+      echo "  4) Exit                                 // 退出"
+      echo "  5) Switch language 中文                 // 切换语言"
+      printf "  choose [1-5]: "
+    fi
     read -r choice || exit 0
+    choice=${choice%$'\r'}   # pty/script input carries CR; strip it
     case "$choice" in
       1) FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=0; doctor_run ;;
       2) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
       3) FLAG_FIX=1; FLAG_RESTART=1; FLAG_AGENT=0; doctor_run ;;
-      4) echo "bye"; exit 0 ;;
-      *) echo "  无效选择，请输入 1-4"; continue ;;
+      4) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
+      5) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
+         [ "$LANG_CODE" = "zh" ] && echo "  已切换到中文（DSH_DOCTOR_LANG=zh 固定）" || echo "  switched to English (set DSH_DOCTOR_LANG=zh for default Chinese)"
+         continue ;;
+      *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-5" || echo "  invalid choice, enter 1-5"; continue ;;
     esac
     echo
-    printf "  按回车返回菜单..."; read -r _ || true
+    [ "$LANG_CODE" = "zh" ] && printf "  按回车返回菜单..." || printf "  press Enter to return to the menu..."
+    read -r _ || true
   done
 }
 

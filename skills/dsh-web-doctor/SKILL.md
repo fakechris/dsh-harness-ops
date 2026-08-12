@@ -46,23 +46,32 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 ~/.dsh/source/current/bin/dsh-doctor # ② 槽 bin 内（prepare 后自动保留）
 ```
 
-**web 挂的时候直接敲 `dsh-doctor`（不带任何路径），不用记参数**——它会显示菜单：
+**web 挂的时候直接敲 `dsh-doctor`（不带任何路径），不用记参数**——它会显示双语菜单
+（**默认英文**，菜单里选 `5` 切换中英文；或用环境变量 `DSH_DOCTOR_LANG=zh` 固定中文）：
 
 ```
 ==============================================================
-  dsh web Doctor — 一键救火
-  当前 web(:3080): ✅ 正常 / ❌ 异常·未起
+  dsh web Doctor — one-shot rescue        // dsh web 医生 — 一键救火
+  web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
 ==============================================================
-  1) 快速体检（只读，几秒）        — 看系统哪里有问题
-  2) LLM 智能自愈（推荐）          — 自动诊断+找根因+修复+拉起 web
-  3) 确定性修复+拉起（不依赖 LLM） — 规则保底，web 挂得再彻底也能跑
-  4) 退出
-  选择 [1-4]:
+  1) Quick check (diagnose only)          // 快速体检（只读）
+  2) LLM self-heal (recommended)          // LLM 智能自愈（需 LLM 配置正常）
+  3) Deterministic fix + relaunch (no LLM)// 确定性修复+拉起（覆盖 relink/
+                                          // launcher/session 等已知故障；
+                                          // 不能修 LLM 凭据缺失——那需要
+                                          // 人工补 key 或选 2）
+  4) Exit                                 // 退出
+  5) Switch language 中文                 // 切换语言
+  choose [1-5]:
 ```
 
 - 不确定选什么 → **选 2**（LLM 智能自愈，推荐）
 - 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**
 - 菜单每次跑完回到菜单，按 `4` 退出
+
+**能力边界（诚实版）**：确定性修复（菜单 3）覆盖 relink / 插件依赖 / launcher /
+session 等**已知故障类**，不依赖 LLM；**它不能修复 LLM 凭据缺失**（API key 是用户秘密，
+doctor 不会臆造——会检测并明确提示补 key）。LLM 配置类问题走菜单 2（LLM 自愈）或人工补 key。
 
 **参数模式**（脚本/自动化/高级用，等价于菜单项；普通用户不需要）：
 
@@ -81,7 +90,7 @@ dsh-doctor --quiet            # 少输出
 |---|---|
 | （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
 | `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
-| `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查**（不依赖 LLM） |
+| `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **LLM 凭据检测**（权限归一化；key 缺失则明确提示补，不臆造）→ **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
 
 ## 分层：确定性是"手和眼"，LLM 是"大脑"
@@ -130,7 +139,9 @@ bash-sandbox/fs-policy/commands）。
    `cordis` import vs 其 node_modules——**不依赖 ab-config**，未来装的任何插件（dsh-loop、
    dsh-kb-sieve…）缺失依赖都会被抓住；缺失时自动从 current 槽 packages 按包名找修复来源
    （`FIXABLE`）或报告无来源（`MISSING`）。
-8. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
+8. **LLM 配置健康**：凭据读取链 = 进程环境 → cwd/.env → `~/.dsh/.env`（`DEEPSEEK_API_KEY`）。
+   doctor 检查 `.env` 存在、key 非空（**不打印 key 本身**）——web 和 headless 都依赖它。
+9. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
    （类型/seq/时间/内容提示）——"挂了之前系统在做什么"。
 
 ## 依赖分层（极小依赖设计）

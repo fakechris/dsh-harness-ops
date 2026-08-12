@@ -102,7 +102,7 @@ refs/heads/dsh-staging/20260809T141636Z             ← 官方 staging（含后�
 | `prepare [--slot a\|b]` | 候选槽：检出快照 → install → build → 扩展挂接构建测试 → 冒烟（3081） | 仅候选槽 |
 | `verify` | 对 prepared 候选重跑扩展测试 + 冒烟 | 只读 |
 | `switch --yes` | `ln -sfn current -> 候选槽` + launcher 验证 + 重启 web | current + 服务 |
-| `confirm` | 标记 current 已确认稳定（解锁回滚槽回收） | state |
+| `confirm` | **生产验收 gate**（2026-08-11 事故后）：HTTP 200 + 进程来自当前槽 + launcher 链 + client manifest 四项实测全过才 confirmed=true（解锁回滚槽回收） | state + 实测 |
 | `rollback --yes` | current 指回 `lastSwitch.previousTarget` + 重启 web | current + 服务 |
 | `cleanup [--yes] dir...` | 列出/移除旧 worktree（绝不删 current） | worktrees |
 
@@ -119,16 +119,29 @@ refs/heads/dsh-staging/20260809T141636Z             ← 官方 staging（含后�
 5. `npm run build:lib`（host+client 的 lib/ 类型与运行时，扩展编译依赖）+
    `npm run build:web`（GUI bundle；`--skip-web` 可省）。
 6. 扩展挂接（每个配置项）：
-   - relink `node_modules/@deepseek-ai/*`、`cordis` → 候选槽（记录旧目标，失败还原）；
+   - relink `node_modules/@deepseek-ai/*`（含 `@deepseek-ai/cordis` → 候选槽 vendor/cordis；20260811+ 官方用 scoped 名，无裸 `cordis` 包）→ 候选槽（记录旧目标，失败还原）；
    - 生成 `tsconfig.ab.json`（替换 tsconfig 中的 current 前缀 → 候选槽）；
    - `DSH_SOURCE=<候选槽> DSH_TSCONFIG=tsconfig.ab.json` 跑 typecheck/build/test；
    - 同步 skills → `~/.dsh/skills/`。
-7. 冒烟：`<候选槽>/bin/dsh web --port 3081`（`--workspace-root` 指向临时目录），轮询
-   HTTP 200 + smokePaths + **client-manifest 断言**（`web.smokeClientIds`：抓 `/` 解析
+6.5 运行时依赖 gate（2026-08-11 事故后新增）：`ext_check_runtime_deps` 扫描扩展构建产物
+   的裸 `@deepseek-ai/*` / `cordis` import，凡扩展 node_modules 缺失的**直接 prepare 失败**
+   并提示补 `extensions[].relink`——tsconfig paths / vitest alias 解析不了这个洞，只有生产
+   纯 node ESM 诚实（漏链在 dryrun 即挂，而不是切换后 ERR_MODULE_NOT_FOUND）。client bundle
+   分块（`lib/client/`）除外：client 侧由 profile pnpm 闭包提供、不经 relink。
+6.6 槽 launcher 补位：20260811+ 快照删了 `bin/dsh`，prepare 用 `ab_ensure_slot_launcher` 给
+   无 launcher 的槽生成 `bin/dsh` 包装器（指向编译产物 `apps/cli/lib/bin.js`），保证切后
+   `dsh` 命令链（`~/.local/bin/dsh → current/bin/dsh`）不断。
+7. 冒烟（**生产等价路径**，2026-08-11 事故后）：`ab_boot_cmd` 启动——优先 `bin/dsh`（有则）
+   或 `apps/cli/lib/bin.js` 纯 node ESM（0811+ 生产入口），**不用 tsx 兜底做 gate**（tsx 读
+   tsconfig paths，会掩盖漏链）；`--workspace-root` 仅探测（final 已删该标志，探测到才传）；
+   轮询 HTTP 200 + smokePaths + **client-manifest 断言**（`web.smokeClientIds`：抓 `/` 解析
    `window.__DSH_BOOT__`，逐一断言扩展 client id 在场）；`--keep` 保留给人工浏览器验收。
    > 教训（2026-08-11 事故）：仅 HTTP 200 会漏掉上游对 package.json 声明键的改名
    > （20260810 快照把 `dshClient` 改为 `dsh.client`）——host 插件照常加载、扩展测试全绿、
    > 冒烟 200，但扩展的 client 行被静默丢弃 → 面板消失。manifest 断言补上了这个洞。
+   > 事故二：dryrun 全绿却生产起不来——扩展 build/test/冒烟各自被 paths/alias/tsx 的"更宽容
+   > 解析"接住，只有生产纯 node ESM 老实查 node_modules（dsh-llm relink 漏链）。冒烟必须走
+   > 与生产相同的解析路径（见 6.5/7），tsx 只能兜底。
 8. 全绿 → phase=`prepared`，证据（快照/tip/扩展结果/时间）写入 state；任一失败 → 还原
    relink/tsconfig、phase 回 `idle`、**current 与运行服务不动**。
 

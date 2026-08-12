@@ -6,11 +6,24 @@
 # entirely from the terminal with local tools (node/zstd/jq/curl/ps/lsof) and
 # the installed skills' scripts; it does NOT depend on a running web process.
 #
+# DEPENDENCY LAYERS (minimal-dependency by design — the doctor must keep
+# working when the things it would fix are broken):
+#   L0 (self-contained, never fails on its own): system tools + node built-ins
+#      + zstd CLI + plain file ops. Covers: layout snapshot, web health,
+#      launcher chain, extension relink existence, slot bootability, session
+#      FILE-layer check (session-store-check.mjs), last-activity, relink +
+#      launcher repair, built-in restart fallback. No DSH compiled package and
+#      no extension bundle is ever loaded by L0.
+#   L1 (deep, degrades gracefully): compiled-reader checks and repairs
+#      (check-all-sessions, repair-unknown-events). These need the current
+#      slot's compiled packages; if they cannot load, the doctor reports that
+#      explicitly and keeps going — L0 conclusions stay authoritative.
+#
 # What it does, in order:
 #   1. environment + layout snapshot (current slot, ab-state, web, launcher)
 #   2. diagnosis: web health, launcher chain, extension relinks, slot bootable,
-#      session store health, web.log tail, and "what happened last" in the most
-#      recently active sessions
+#      session store health (L0 file layer + optional L1 deep), web.log tail,
+#      and "what happened last" in the most recently active sessions
 #   3. --fix: apply known self-heals (relink recreate, slot launcher, unknown
 #      session-event ignorable marking, corrupt-log repair)
 #   4. --restart: relaunch dsh web and poll HTTP 200
@@ -143,11 +156,16 @@ if [ -n "$CURRENT" ]; then
   fi
 fi
 
-# 3e. session store health (lightweight: check-all-sessions)
+# 3e. session store health — L0 self-contained check FIRST (file layer only:
+# node built-ins + zstd CLI, no DSH compiled packages — works even when the
+# current slot / its build artifacts are broken). The compiled-reader deep
+# check (check-all-sessions) is an OPTIONAL enhancement that runs only when
+# it can load; its failure must never fail the doctor.
 echo
-say "== session store =="
-if [ -f "$REC/check-all-sessions.mjs" ]; then
-  out=$(node "$REC/check-all-sessions.mjs" 2>&1)
+say "== session store (file-layer, minimal deps) =="
+L0="$SKILLS_DIR/dsh-web-doctor/scripts/session-store-check.mjs"
+if [ -f "$L0" ]; then
+  out=$(node "$L0" 2>&1)
   rc=$?
   tail_line=$(printf '%s\n' "$out" | tail -1)
   if [ "$rc" = "0" ]; then
@@ -157,8 +175,16 @@ if [ -f "$REC/check-all-sessions.mjs" ]; then
     note_problem
   fi
 else
-  err "check-all-sessions.mjs missing — session store not checked"
+  err "session-store-check.mjs missing — session store not checked"
   note_problem
+fi
+if [ -f "$REC/check-all-sessions.mjs" ]; then
+  deep=$(node "$REC/check-all-sessions.mjs" 2>&1); drc=$?
+  if [ "$drc" = "0" ]; then
+    say "  deep check (compiled reader): $(printf '%s\n' "$deep" | tail -1)"
+  else
+    warn "  deep check unavailable (compiled reader failed to load — current slot may be broken; file-layer check above is authoritative for doctor's purposes)"
+  fi
 fi
 
 # 3f. web.log tail
@@ -213,7 +239,9 @@ LAUNCHER
     ok "materialized $CURRENT/bin/dsh (compiled CLI entry)"
   fi
 
-  # 4c. unknown session-event repair (ignorable marking)
+  # 4c. unknown session-event repair (ignorable marking) — DEEP layer: needs the
+  #     compiled DSH reader, so it may not load when the slot is broken. That
+  #     failure must degrade gracefully, not fail the doctor.
   if [ -f "$REC/repair-unknown-events.mjs" ]; then
     node "$REC/repair-unknown-events.mjs" --all >/tmp/dsh-doctor-repair.log 2>&1
     rc=$?
@@ -221,7 +249,8 @@ LAUNCHER
       tail -1 /tmp/dsh-doctor-repair.log | sed 's/^/  /'
       ok "unknown-event repair pass complete"
     else
-      err "unknown-event repair failed (see /tmp/dsh-doctor-repair.log)"
+      err "unknown-event repair could not run (deep layer needs the compiled DSH reader; likely the current slot is broken)."
+      err "  diagnose the slot first; the repair itself: node $REC/repair-unknown-events.mjs --all"
       note_problem
     fi
   fi
@@ -259,15 +288,26 @@ PY
   fi
 fi
 
-# --- 5. restart --------------------------------------------------------------
+# --- 5. restart (L0: self-contained kill + nohup + poll; the recovery skill's
+#        restart script is used when present, else doctor does it itself —
+#        the relaunch must never depend on a skill that may not be installed) --
 if [ "$FLAG_RESTART" = "1" ]; then
   echo
   info "== relaunching dsh web (port $PORT) =="
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "http://127.0.0.1:$PORT/" 2>/dev/null || echo 000)
   if [ "$code" = "200" ]; then
     ok "web already up — skipping restart"
-  elif [ -f "$REC/restart-dsh-web.sh" ]; then
-    sh "$REC/restart-dsh-web.sh" 2>&1 | tail -6
+  else
+    if [ -f "$REC/restart-dsh-web.sh" ]; then
+      sh "$REC/restart-dsh-web.sh" >/tmp/dsh-doctor-restart.log 2>&1
+      say "  restart script: $(tail -2 /tmp/dsh-doctor-restart.log | tr '\n' ' ')"
+    else
+      say "  restarting with doctor's built-in fallback (no recovery skill present)..."
+      local_pids=$(lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null)
+      [ -n "$local_pids" ] && kill -TERM $local_pids 2>/dev/null || true
+      i=0; while [ "$i" -lt 30 ] && lsof -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do i=$((i+1)); sleep 1; done
+      ( cd "$HOME" && nohup dsh web >/tmp/dsh-web-restart.log 2>&1 & )
+    fi
     code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1:$PORT/" 2>/dev/null || echo 000)
     if [ "$code" = "200" ]; then
       ok "web is UP on :$PORT after restart"
@@ -275,9 +315,6 @@ if [ "$FLAG_RESTART" = "1" ]; then
       err "web NOT up after restart (HTTP $code) — inspect the log tail above"
       exit 2
     fi
-  else
-    err "restart-dsh-web.sh missing — cannot relaunch"
-    exit 2
   fi
 fi
 

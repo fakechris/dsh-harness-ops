@@ -123,6 +123,14 @@ node scripts/repair-session-log.mjs --id <session-id>
 - 需要改 session 日志时，走 DSH 自身写入路径（append/打包），或本 skill 的 repair 脚本。
 - 对 `~/.dsh/sessions` 的任何写操作：先备份 → 先校验 → 原子 rename + 可回滚两步交换。
 - 定期备份 `~/.dsh/sessions/`（本事故中"修复前的多帧版本"没有副本，只有坏掉的单帧版）。
+- **插件不要往 session 日志写自定义事件**：外部插件事件不在 harness 的事件白名单
+  （`KNOWN_SESSION_EVENT_TYPES`，编译期生成），读取时无 `ignorable` 标记会**拒读整份日志**
+  （2026-08-11 事故：旧 dsh-track 的 `track/*` 事件让 6 个会话打不开）。业务数据写插件
+  自己的 storage；观察会话走官方事件（`session/event`）；确需旁路数据必须带 `ignorable: true`
+  且不承载关键数据。存量旧日志含未知事件 → `repair-unknown-events.mjs --id <session-id>`。
+- 插件扩展 relink（`~/.dsh/source/current` 下的 node_modules 链接）由 ab.sh 自愈守护，
+  不要手工 ln 后放任无主——手工建链被外部清理会直接挂 `dsh web`（见 dsh-snapshot-ab
+  的 `ab_verify_relinks`）。
 
 ## 参考
 

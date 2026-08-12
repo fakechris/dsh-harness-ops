@@ -11,12 +11,15 @@ English | [中文](README.md)
 > | **`skills/dsh-snapshot-ab`** | skill | Daily upstream-snapshot A/B dual-slot rotation — "switch to the right version" on upgrade |
 > | **`skills/dsh-web-guard`** | skill | Self-healing guard — auto-restarts web within 10s of it dying |
 > | **`skills/dsh-session-recovery`** | skill | Session-loss diagnosis — locate & losslessly repair "0 sessions" / corrupted logs |
+> | **`skills/dsh-web-doctor`** | skill | Out-of-band doctor — one terminal command to diagnose → fix → relaunch when web/A/B are all down |
 > | **`plugins/dsh-restart-recover`** | cordis plugin | Restart continuation — an interrupted turn resumes automatically |
 >
-> Together they answer four questions: **who brings web back up when it dies? Does work
+> Together they answer five questions: **who brings web back up when it dies? Does work
 > continue after restart? What if sessions seem lost? How do we switch versions safely
-> when the official release arrives?** They complement each other:
-> `ab.sh switch/rollback` kills web → `dsh-web-guard` brings it back → `dsh-restart-recover` continues the turn.
+> when the official release arrives? How do we rescue a total A/B outage with one
+> command?** They complement each other:
+> `ab.sh switch/rollback` kills web → `dsh-web-guard` brings it back → `dsh-restart-recover` continues the turn;
+> the last-resort fallback for a total outage is `dsh-web-doctor` (`doctor.sh --fix --restart`).
 >
 > > Formerly `dsh-skill-snapshot-ab` (renamed 2026-08-11) — the repo grew from a
 > > pure AB-rotation skill into a mixed "skill + plugin" toolbox, so the old name no
@@ -37,7 +40,9 @@ dsh-harness-ops (this repo)
 ├── skills/dsh-web-guard/          self-healing guard: launchd/systemd hosted, brings web up within 10s of a free port
 │   └── scripts/install.sh         cross-platform install (macOS launchd / Linux systemd)
 ├── skills/dsh-session-recovery/   session-loss diagnosis: 0 sessions/corrupted logs → locate → lossless repair → restart
-│   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions
+│   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
+├── skills/dsh-web-doctor/        out-of-band doctor: diagnose → fix → relaunch from the terminal when web/A/B are all down
+│   └── scripts/                   doctor.sh / session-last-activity.mjs
 └── plugins/dsh-restart-recover/   restart-continuation plugin: detects interrupted on agent/created → auto-injects continuation
     └── src/index.ts               cordis plugin (listens agent/created, zero dsh-track dependency)
 ```

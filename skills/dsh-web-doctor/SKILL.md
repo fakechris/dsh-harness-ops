@@ -6,7 +6,7 @@ description: >-
   → 确定性自动修复（relink 自愈、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
   或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
-  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（在终端跑 dsh-doctor（或 bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh））。
+  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（终端跑 dsh-doctor，无参数即交互菜单：体检/LLM 自愈/确定性修复+拉起）。
   English: out-of-band doctor for dsh web when it is down or won't boot (both A/B slots
   broken, GUI/agent unavailable). One terminal command diagnoses (web health, launcher
   chain, extension relinks, slot bootability, session store, web.log, last activity in
@@ -37,16 +37,35 @@ skills 的脚本，**不依赖任何 web 进程**。
 - **web 挂时 agent 也不可用**（agent 由 web 托管）——直接让用户在终端跑 doctor.sh，或把
   本 skill 的自愈 prompt 粘给任何可用的 agent。
 
-## 用法（用户角度：一条短命令）
+## 用法（用户角度：一条短命令，无参数即交互菜单）
 
-装好（`install.sh`）后，`dsh-doctor` 就在 PATH 上（`~/.local/bin/dsh-doctor`），**web 挂的时候
-直接在终端敲**：
+装好（`install.sh`）后，`dsh-doctor` 就在 PATH 上（`~/.local/bin/dsh-doctor`）。**web 挂的时候
+直接在终端敲 `dsh-doctor`，不用记任何参数**——它会显示一个菜单：
+
+```
+==============================================================
+  dsh web Doctor — 一键救火
+  当前 web(:3080): ✅ 正常 / ❌ 异常·未起
+==============================================================
+  1) 快速体检（只读，几秒）        — 看系统哪里有问题
+  2) LLM 智能自愈（推荐）          — 自动诊断+找根因+修复+拉起 web
+  3) 确定性修复+拉起（不依赖 LLM） — 规则保底，web 挂得再彻底也能跑
+  4) 退出
+  选择 [1-4]:
+```
+
+- 不确定选什么 → **选 2**（LLM 智能自愈，推荐）
+- 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**
+- 菜单每次跑完回到菜单，按 `4` 退出
+
+**参数模式**（脚本/自动化/高级用，等价于菜单项；普通用户不需要）：
 
 ```sh
-dsh-doctor                    # 只诊断（只读，秒级）
-dsh-doctor --fix              # 诊断 + 确定性自动修复（保底，不依赖 LLM）
-dsh-doctor --fix --restart    # 诊断 + 修复 + 拉起 web（救火一条龙）
-dsh-doctor --agent            # LLM 主脑：体检 → 交给 headless LLM agent 找根因/修复/拉回
+dsh-doctor                    # 交互菜单（终端下）；脚本/管道下 = 只读诊断
+dsh-doctor --agent            # = 菜单 2（LLM 主脑）
+dsh-doctor --fix --restart    # = 菜单 3（确定性修复 + 拉起）
+dsh-doctor --fix              # 只确定性修复，不拉起
+dsh-doctor --quiet            # 少输出
 ```
 
 底层脚本在 `~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh`（也可直接 `bash` 它），
@@ -54,10 +73,10 @@ dsh-doctor --agent            # LLM 主脑：体检 → 交给 headless LLM agen
 
 | Flag | 作用 |
 |---|---|
-| （无） | 只读诊断，报告问题清单（exit 0 全好 / exit 1 有问题） |
+| （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
+| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
 | `--fix` | 确定性自动修复：relink 自愈 → bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
-| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
 
 ## 分层：确定性是"手和眼"，LLM 是"大脑"
 
@@ -70,6 +89,24 @@ dsh-doctor --agent            # LLM 主脑：体检 → 交给 headless LLM agen
 （0811 就删过 `bin/dsh`）；新故障模式规则想不到。
 **为什么不能只有 LLM**：web 挂时 agent 起不来（headless 也依赖 harness 本身）；让 LLM 扫 92 个
 session 太慢太贵；修复需要不变的操作原语。**确定性传感器 + LLM 大脑是正解。**
+
+### headless 依赖面（--agent 的可用边界，实测确认 2026-08-11）
+
+`dsh --profile headless` 的插件组合 = `dsh-base` + `dsh-headless` 两个 bundle，**不加载
+dsh-track 等 web 专属扩展**（web profile 才挂 dsh-track/dsh-restart-recover）。它自带
+skill provider（`dsh-skill*`，扫描 `~/.dsh/skills`）和完整 agent 栈（agent-loop/llm/
+bash-sandbox/fs-policy/commands）。
+
+| 依赖面 | headless（--agent） | doctor 确定性（--fix） |
+|---|---|---|
+| 扩展 bundle（dsh-track 等） | **不加载** → 扩展链接故障不影响它 | 不加载 |
+| skills（~/.dsh/skills） | **加载**（skill-local provider） | 直接读文件 |
+| current 槽编译产物 | **依赖**（跑在槽上） | 不依赖（L0） |
+| LLM 凭据 | **依赖** | 不需要 |
+
+**边界结论**：扩展依赖故障（如 dsh-llm 链接被清）→ `--agent` 的 LLM 照样能上（headless 不
+加载扩展）；**槽/编译产物坏或 LLM 凭据缺失** → headless 起不来 → 用菜单 3 / `--fix --restart`
+（L0 不依赖槽和凭据）。
 
 ## 诊断项（doctor 查什么）
 

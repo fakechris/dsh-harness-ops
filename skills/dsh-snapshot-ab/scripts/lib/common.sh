@@ -201,6 +201,13 @@ exec node "$root/apps/cli/lib/bin.js" "$@"
 EOF
   chmod +x "$dir/bin/dsh"
   ab_log "  slot launcher -> $dir/bin/dsh (compiled CLI entry)"
+  # the out-of-band doctor lives next to the launcher too, so a user who
+  # expects `~/.dsh/source/current/bin/dsh-doctor` finds it after every
+  # prepare (the primary entry is the PATH command `dsh-doctor`).
+  if [ -x "$HOME/.dsh/skills/dsh-web-doctor/scripts/doctor.sh" ]; then
+    ln -sfn "$HOME/.dsh/skills/dsh-web-doctor/scripts/doctor.sh" "$dir/bin/dsh-doctor"
+    ab_log "  slot doctor -> $dir/bin/dsh-doctor"
+  fi
 }
 
 # ab_verify_relinks — self-heal the extensions' node_modules relinks against

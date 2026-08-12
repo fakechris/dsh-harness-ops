@@ -52,11 +52,27 @@ REPORT="${DSH_DOCTOR_REPORT:-/tmp/dsh-doctor-report.txt}"
 FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0
 while [ $# -gt 0 ]; do
   case "$1" in
+    --help|-h)
+      cat <<'HELP'
+dsh web Doctor — 一键救火（web 挂了 / 起不来时用）
+
+用法（不用记，直接跑 dsh-doctor 就有交互菜单）：
+  dsh-doctor                    交互菜单（推荐）
+  dsh-doctor --agent            LLM 智能自愈（诊断+找根因+修复+拉起 web）
+  dsh-doctor --fix --restart    确定性修复 + 拉起 web（不依赖 LLM）
+  dsh-doctor --fix              只确定性修复
+  dsh-doctor --quiet            少输出
+
+入口（二选一，都行）：
+  dsh-doctor                    # PATH 命令（~/.local/bin/dsh-doctor，与 dsh 同目录）
+  ~/.dsh/source/current/bin/dsh-doctor   # 槽 bin 内（prepare 后自动保留）
+HELP
+      exit 0 ;;
     --fix) FLAG_FIX=1; shift ;;
     --restart) FLAG_RESTART=1; shift ;;
     --agent) FLAG_AGENT=1; shift ;;
     --quiet) FLAG_QUIET=1; shift ;;
-    *) echo "unknown arg: $1" >&2; exit 2 ;;
+    *) echo "unknown arg: $1 (try: dsh-doctor --help)" >&2; exit 2 ;;
   esac
 done
 

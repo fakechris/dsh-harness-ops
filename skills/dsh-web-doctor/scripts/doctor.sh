@@ -581,9 +581,10 @@ for line in sys.stdin:
     data = d.get("data", {}) or {}
     txt = ""
     if t == "reasoning-chunks":
-        txt = (data.get("text", "") or "").strip()
+        # reasoning lives in data.texts (an array of tokens) — join them
+        txt = "".join(data.get("texts") or [data.get("text", "")] or []).strip()
     elif t in ("assistant/chunk", "text-chunks"):
-        txt = (data.get("text", "") or "").strip()
+        txt = "".join(data.get("texts") or [data.get("text", "")] or []).strip()
     elif t == "tool/call":
         a = data.get("arguments", data.get("input", ""))
         txt = ("tool " + str(data.get("name", "?")) + " " + (str(a)[:120] if isinstance(a, str) else ""))

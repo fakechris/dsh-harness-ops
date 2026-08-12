@@ -75,6 +75,7 @@ ab_load_config
 # ---- subcommands ------------------------------------------------------------
 
 cmd_status() {
+  ab_verify_relinks
   local cur s slot dir snap tip phase confirmed
   cur=$(ab_current_slot)
   phase=$(ab_state_get '.phase // "idle"')
@@ -420,6 +421,7 @@ ab_fail_prepare() {
 }
 
 cmd_verify() {
+  ab_verify_relinks
   local slot phase snap dir
   phase=$(ab_state_get '.phase')
   [ "$phase" = "prepared" ] || ab_die "nothing prepared (phase=$phase)"
@@ -538,6 +540,7 @@ cmd_switch() {
 }
 
 cmd_confirm() {
+  ab_verify_relinks
   # Production-acceptance gate (2026-08-11 incident): confirming means "the
   # RUNNING version is verifiably healthy through the PRODUCTION path" — not
   # just "the user said ok". Reject the confirm unless:
@@ -624,6 +627,7 @@ cmd_rollback() {
 }
 
 ab_restart_web() {
+  ab_verify_relinks
   local port pid i code log cwd pids
   port=$(ab_config_get '.web.productionPort // 3080')
   pids=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | awk '{print $2}')

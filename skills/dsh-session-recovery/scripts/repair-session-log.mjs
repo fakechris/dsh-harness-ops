@@ -170,7 +170,7 @@ try {
 }
 
 // 双路径解析 dsh-session：源码 checkout（A/B）→ 源码 packages/；npm 安装 → profile 闭包
-const { decodeStorageRecord } = sessionRequire('@deepseek-ai/dsh-session')
+const { decodeStorageRecord } = sessionRequire()('@deepseek-ai/dsh-session')
 const unpacked = []
 for (let i = 1; i < lines.length; i++) {
   for (const event of decodeStorageRecord(JSON.parse(lines[i]))) unpacked.push(event)

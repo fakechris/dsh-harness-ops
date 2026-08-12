@@ -54,6 +54,11 @@ function persistenceRequire() {
   return { require: createRequire(join(pkgDir, 'package.json')), mode: 'npm' }
 }
 
+/** Public handle to the persistence backend's require (for frame-level tools). */
+export function persistenceRequireHandle() {
+  return persistenceRequire()
+}
+
 /**
  * 双路径解析 `@deepseek-ai/dsh-session` 的 require（repair 脚本 decodeStorageRecord 用）。
  * 判别与 persistenceRequire 一致：源码 checkout → 源码 packages/；npm → profile 闭包。
@@ -75,8 +80,15 @@ export function sessionRequire() {
  */
 export function loadPersistence(root = defaultSessionsRoot()) {
   const { require, mode } = persistenceRequire()
-  const cordisName = mode === 'npm' ? '@deepseek-ai/cordis' : 'cordis'
-  const { Context } = require(cordisName)
+  // cordis: pre-0811 snapshots vendored it as `cordis`; the 20260811 snapshot
+  // renamed it to `@deepseek-ai/cordis`. Try both so the diagnostic scripts
+  // work against either layout.
+  let Context
+  try {
+    ({ Context } = require('cordis'))
+  } catch {
+    ({ Context } = require('@deepseek-ai/cordis'))
+  }
   const { SessionPersistenceJsonl } = require('@deepseek-ai/dsh-session-persistence-jsonl')
   const ctx = new Context()
   ctx.sessions = { list: () => [] } // no live sessions in a diagnostic context

@@ -31,6 +31,11 @@ metadata:
 - GUI 侧边栏 workspace 下显示 "0 sessions"，但磁盘上 session 文件还在。
 - 任何 `corrupt Zstandard session log` / `first frame is not exactly one header line` /
   `torn JSONL record` / `seq gap in committed region` / `invalid frame magic` 错误。
+- **`SessionFormatUnsupportedError: ... event type "X" ... unknown to this harness and
+  not marked ignorable`**（2026-08-11 事故）：日志含当前 harness 不认识的事件类型
+  （如旧 dsh-track 的 `track/sync-preview` / `track/decision`，0811 迁移移除），
+  读取器拒绝解释。用 `repair-unknown-events.mjs` 给这类事件加 `ignorable: true`
+  （官方 vocabulary-growth 通道，对话内容零改动）。
 
 ## 诊断流程
 

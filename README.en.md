@@ -77,23 +77,31 @@ dsh-doctor                    # interactive menu (English default; option 5 swit
   web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
 ==============================================================
   1) Quick check (diagnose only)          // 快速体检（只读）
-  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读诊断+日志
-                                          //   推理根因，发现/修复任意插件问题
-  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
+  2) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
      incl. relaunch web                  //   插件依赖/launcher/session/LLM 凭据等
                                           //   已知配置故障
-  4) Exit                                 // 退出
-  5) Switch language 中文                 // 切换语言
+  3) LLM repair (recommended)            // LLM 修复（推荐）：LLM 读诊断+日志推理根因，
+                                          //   发现/修复任意插件问题（含核心不兼容、
+                                          //   插件配置被改乱）
+  4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，不因诊断
+                                          //   全绿跳过；完整思维链实时展示）
+  5) Exit                                 // 退出
+  6) Switch language 中文                 // 切换语言
 ```
 
+During deep LLM check/repair, `[llm]` streams the **full reasoning chain** — how it thinks
+(full CoT text), which command it decided to run (tool + complete command), and the results.
+No black box.
+
 **Layered design (why)**:
-- **Deterministic layer** (option 3): sensors + actuators — seconds, zero LLM cost, runs even
+- **Deterministic layer** (option 2): sensors + actuators — seconds, zero LLM cost, runs even
   when everything is broken; covers known config faults (relinks / plugin deps / launcher /
   sessions / LLM credentials); skips repair automatically when the diagnosis is all green
-- **LLM brain** (option 2): a one-shot `dsh --profile headless` agent reads the report + logs
+- **LLM brain** (options 3/4): a one-shot `dsh --profile headless` agent reads the report + logs
   and reasons about the root cause — it can find/fix what deterministic rules cannot (DSH core
   incompatibility, a plugin that scrambled its config, new failure modes); headless does NOT
-  load the web's extension bundles, so extension faults don't stop it
+  load the web's extension bundles, so extension faults don't stop it; option 4 forces the deep
+  check even when the diagnosis is green
 
 **9 diagnosis checks**: web health / launcher chain / extension relinks / slot bootability /
 session file-layer (97 logs) / web.log (classified: historical vs current fault) / profile

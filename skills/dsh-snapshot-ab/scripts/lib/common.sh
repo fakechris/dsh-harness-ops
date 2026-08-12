@@ -37,10 +37,11 @@ ab_resolve_layout() {
     resolved=$(resolve_link "$launcher")
     root=$(CDPATH='' cd -- "$(dirname -- "$resolved")/.." 2>/dev/null && pwd || true)
   fi
-  if [ -z "${root:-}" ] || [ ! -d "${root:-}/bin" ]; then
-    # fallback: conventional home layout
+  if [ -z "${root:-}" ] || { [ ! -d "${root:-}/bin" ] && [ ! -f "${root:-}/apps/cli/src/bin.ts" ]; }; then
+    # fallback: conventional home layout (20260811+ dropped bin/dsh; the
+    # tsx source entry apps/cli/src/bin.ts is the bootable artifact)
     root="$HOME/.dsh/source/current"
-    [ -d "$root/bin" ] || ab_die "cannot resolve DSH source checkout (launcher '$launcher' -> '$root')"
+    { [ -d "$root/bin" ] || [ -f "$root/apps/cli/src/bin.ts" ]; } || ab_die "cannot resolve DSH source checkout (launcher '$launcher' -> '$root')"
     ab_warn "launcher resolution failed; fell back to $root"
   fi
   AB_CURRENT="$(CDPATH='' cd -- "$root" && pwd)"
@@ -152,6 +153,12 @@ ab_boot_cmd() {
   else
     printf 'env NODE_USE_ENV_PROXY=1 TSX_TSCONFIG_PATH=%s/tsconfig.json node --import %s/node_modules/tsx/dist/esm/index.mjs %s/apps/cli/src/bin.ts\n' "$dir" "$dir" "$dir"
   fi
+}
+
+# ab_slot_usable <dir> — true when the slot has a bootable CLI: bin/dsh
+# (0810-era) or the tsx source entry (20260811+ removed bin/dsh).
+ab_slot_usable() {
+  [ -x "$1/bin/dsh" ] || [ -f "$1/apps/cli/src/bin.ts" ]
 }
 
 # ---- misc -------------------------------------------------------------------

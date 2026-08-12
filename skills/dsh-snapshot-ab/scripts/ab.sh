@@ -454,7 +454,7 @@ cmd_e2e() {
     [ -n "$slot" ] || slot=$(ab_current_slot)
   fi
   dir=$(ab_slot_dir "$slot")
-  [ -n "$dir" ] && [ -d "$dir/bin" ] || ab_die "slot $slot has no usable checkout ($dir)"
+  [ -n "$dir" ] && ab_slot_usable "$dir" || ab_die "slot $slot has no usable checkout ($dir)"
   wport="$FLAG_PORT"; [ -n "$wport" ] || wport=$(ab_config_get '.web.port // 3081')
   whost=$(ab_config_get '.web.host // "127.0.0.1"'); wtimeout=$(ab_config_get '.web.startupTimeoutSec // 180')
   ab_log "e2e acceptance for slot $slot ($dir)"
@@ -495,7 +495,7 @@ cmd_switch() {
   [ "$phase" = "prepared" ] || ab_die "nothing prepared (phase=$phase); run prepare first"
   slot=$(ab_state_get '.candidate'); [ -n "$slot" ] || ab_die "no candidate slot recorded"
   dir=$(ab_slot_dir "$slot")
-  [ -d "$dir/bin" ] || ab_die "candidate dir missing: $dir"
+  ab_slot_usable "$dir" || ab_die "candidate dir missing: $dir"
   prev_slot=$(ab_current_slot)
   prev_target=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")
   at=$(ab_now)
@@ -531,7 +531,7 @@ cmd_rollback() {
   local prev_target at
   prev_target=$(ab_state_get '.lastSwitch.previousTarget // ""')
   [ -n "$prev_target" ] || ab_die "no previous target recorded"
-  [ -d "$prev_target/bin" ] || ab_die "previous target missing: $prev_target"
+  ab_slot_usable "$prev_target" || ab_die "previous target missing: $prev_target"
   at=$(ab_now)
   ab_lock "rollback-$$" || ab_die "another A/B operation holds the lock"
   trap 'ab_unlock' EXIT
@@ -610,7 +610,7 @@ cmd_stage() {
   slot="$FLAG_SLOT"
   [ -n "$slot" ] || ab_die "usage: ab.sh stage --slot a|b [--port N] [--keep]"
   local dir; dir=$(ab_slot_dir "$slot")
-  [ -n "$dir" ] && [ -d "$dir/bin" ] || ab_die "slot $slot has no usable checkout ($dir)"
+  [ -n "$dir" ] && ab_slot_usable "$dir" || ab_die "slot $slot has no usable checkout ($dir)"
   port="$FLAG_PORT"
   [ -n "$port" ] || port=$(ab_config_get '.web.port // 3081')
   if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then

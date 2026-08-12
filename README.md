@@ -343,7 +343,7 @@ $AB confirm
 ### 场景 E · 临时查看另一个版本（有护栏，别裸跑）
 
 > 生产在跑的时候，你想看看另一个槽的界面（验收 / 对比）。**不要直接**
-> `~/.dsh/source/slot-b/bin/dsh web --port 3081` 裸跑 —— 用 `stage`，它会检测并要你确认。
+> `<候选槽>/bin/dsh web --port 3081` 裸跑 —— 用 `stage`，它会检测并要你确认。
 
 ```sh
 $AB stage --slot b --port 3082            # 前台跑，Ctrl-C 停止

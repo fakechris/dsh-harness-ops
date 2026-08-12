@@ -369,7 +369,7 @@ re-indexed after restart — none are lost. Find the workspace's historical sess
 ### Scenario E · Temporarily inspect another version (guarded; don't run bare)
 
 > While production runs, you may want to see the other slot's UI (acceptance / comparison).
-> **Don't** run `~/.dsh/source/slot-b/bin/dsh web --port 3081` bare — use `stage`, which
+> **Don't** run `<slot>/bin/dsh web --port 3081` bare — use `stage`, which
 > detects and asks for confirmation.
 
 ```sh

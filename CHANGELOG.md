@@ -7,7 +7,28 @@ Versioning: [SemVer](https://semver.org/). Distribution unit is the GitHub
 repository (no npm registry publish required — see `docs/RELEASE.md`).
 Each entry links its squash-merged PR.
 
+## [0.2.1] — 2026-08-12
+
+Final-release compatibility + web-doctor productization (26 commits since v0.2.0).
+
+- `fix(restart-recover)`: migrate bare `cordis` import to `@deepseek-ai/cordis`
+  (import + tsconfig paths + vitest alias; final release's augmentation target).
+  ([#37](https://github.com/dsh-external/dsh-harness-ops/pull/37))
+- `fix(snapshot-ab)`: `ext_check_runtime_deps` skips client-bundle chunk dir
+  (`lib/client/`), not just `client.js` — client-only imports (e.g. dsh-track's
+  `@deepseek-ai/dsh-client-runtime/client`) resolve from the profile closure,
+  never the relink map. ([#38](https://github.com/dsh-external/dsh-harness-ops/pull/38))
+- `feat(web-doctor)`: out-of-band doctor for total web/A-B outages — interactive
+  menu, `--agent` headless LLM self-heal, dual entry points, generic plugin
+  dependency coverage, bilingual UI, CoT streaming, `--force`. ([#17](https://github.com/dsh-external/dsh-harness-ops/pull/17) [#18](https://github.com/dsh-external/dsh-harness-ops/pull/18) [#19](https://github.com/dsh-external/dsh-harness-ops/pull/19) [#20](https://github.com/dsh-external/dsh-harness-ops/pull/20) [#21](https://github.com/dsh-external/dsh-harness-ops/pull/21) [#22](https://github.com/dsh-external/dsh-harness-ops/pull/22) [#23](https://github.com/dsh-external/dsh-harness-ops/pull/23) [#24](https://github.com/dsh-external/dsh-harness-ops/pull/24) [#25](https://github.com/dsh-external/dsh-harness-ops/pull/25) [#26](https://github.com/dsh-external/dsh-harness-ops/pull/26) [#28](https://github.com/dsh-external/dsh-harness-ops/pull/28) [#29](https://github.com/dsh-external/dsh-harness-ops/pull/29) [#30](https://github.com/dsh-external/dsh-harness-ops/pull/30) [#31](https://github.com/dsh-external/dsh-harness-ops/pull/31) [#32](https://github.com/dsh-external/dsh-harness-ops/pull/32))
+- `fix(snapshot-ab+recovery)`: extension relink self-heal on every ab.sh entry +
+  `repair-unknown-events.mjs` for session unknown-event refusal (incident
+  follow-up). ([#15](https://github.com/dsh-external/dsh-harness-ops/pull/15) [#16](https://github.com/dsh-external/dsh-harness-ops/pull/16))
+- `chore/docs`: nested `.worktrees/` convention, productized README intro,
+  repo-level AGENTS.md, release reality docs. ([#13](https://github.com/dsh-external/dsh-harness-ops/pull/13) [#14](https://github.com/dsh-external/dsh-harness-ops/pull/14) [#33](https://github.com/dsh-external/dsh-harness-ops/pull/33) [#34](https://github.com/dsh-external/dsh-harness-ops/pull/34) [#35](https://github.com/dsh-external/dsh-harness-ops/pull/35) [#36](https://github.com/dsh-external/dsh-harness-ops/pull/36))
+
 ## [0.2.0] — 2026-08-12
+
 
 Switch-incident hardening (post-mortem: `skills/dsh-snapshot-ab/references/postmortem-ab-switch-20260811.md`).
 

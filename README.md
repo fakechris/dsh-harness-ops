@@ -75,16 +75,31 @@ bug-fix / simplification / architecture / process / testing，每篇带 `.zh.md`
 ## 1. 安装
 
 ```sh
-# 1) 把 skill 装进默认扫描目录
-mkdir -p ~/.dsh/skills && cp -r skills/dsh-snapshot-ab ~/.dsh/skills/
-cp -r skills/dsh-session-recovery ~/.dsh/skills/   # 会话恢复 skill（诊断/修复 session 日志损坏）
+# 一键安装：3 个 skill 进 ~/.dsh/skills + dsh-restart-recover bundle 进 web profile
+git clone https://github.com/dsh-external/dsh-harness-ops.git
+cd dsh-harness-ops
+bash scripts/install.sh
 
-# 2) 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
-#    通常只需确认 ab-config.json 里的 extensions（扩展仓库路径）与 web 端口
+# 可选：自愈守护（launchd/systemd，web 死后 10s 自动拉起）
+bash skills/dsh-web-guard/scripts/install.sh
+
+# 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
+# 通常只需确认 ab-config.json 里的 extensions（扩展仓库路径）与 web 端口
 vi ~/.dsh/source/ab-config.json
 
-# 3) 验证
+# 验证
 $AB status
+```
+
+> **版本与发布**：本仓库是**发布单元**（GitHub 即分发，**不进 npm**，官方立场见
+> [`docs/RELEASE.md`](docs/RELEASE.md)）。版本 = 根目录 `VERSION` + git tag `vX.Y.Z` +
+> [`CHANGELOG.md`](CHANGELOG.md)（SemVer）。
+> **更新不需要手工打包**：`bash scripts/update.sh` 一条命令完成
+> `git pull → 重建插件 lib → 重装 skills/bundle`（bundle 插件自带 `prepare` 脚本，git 拉源码后自动构建）。
+
+```sh
+# 之后每次更新
+cd dsh-harness-ops && bash scripts/update.sh
 ```
 
 `ab-config.json` 关键字段：`upstream`（官方仓库）、`extensions[]`（扩展列表：repo/relink/构建命令）、

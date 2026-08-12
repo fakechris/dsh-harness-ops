@@ -86,6 +86,61 @@ PROBLEMS=0
 note_problem() { PROBLEMS=$((PROBLEMS + 1)); }
 
 # ---------------------------------------------------------------------------
+# fix_llm_config — LLM credentials/config repair with interactive key input.
+# The goal is to CONFIGURE it, not just hint: if DEEPSEEK_API_KEY is
+# missing/empty and a terminal is available, ask the user to paste the key
+# (hidden input), back up .env, write it, chmod 600. settings.yaml that is
+# empty/corrupt is backed up and reset to a minimal {}. Non-interactive runs
+# print the exact command instead. The key itself is user-owned — doctor
+# guides and configures, never invents.
+# ---------------------------------------------------------------------------
+fix_llm_config() {
+  local env_file="$HOME/.dsh/.env" settings_file="$HOME/.dsh/settings.yaml"
+  local have_key=0
+  [ -f "$env_file" ] && grep -qE '^DEEPSEEK_API_KEY=.+$' "$env_file" 2>/dev/null && have_key=1
+
+  if [ "$have_key" = "1" ]; then
+    chmod 600 "$env_file" 2>/dev/null
+    ok "  LLM: DEEPSEEK_API_KEY present in ~/.dsh/.env (permissions 600)"
+  else
+    mkdir -p "$HOME/.dsh"
+    [ -f "$env_file" ] && cp "$env_file" "$env_file.bak-$(date +%s)" 2>/dev/null
+    if [ -t 0 ]; then
+      printf '  DEEPSEEK_API_KEY is missing/empty. Paste your API key (input hidden): '
+      read -r -s api_key || { echo; err "  aborted — no key entered"; return 1; }
+      echo
+      if [ -n "$api_key" ]; then
+        grep -v '^DEEPSEEK_API_KEY=' "$env_file" 2>/dev/null > "$env_file.tmp" || true
+        printf 'DEEPSEEK_API_KEY=%s\n' "$api_key" >> "$env_file.tmp"
+        mv "$env_file.tmp" "$env_file"
+        chmod 600 "$env_file"
+        ok "  LLM: DEEPSEEK_API_KEY configured in ~/.dsh/.env (old file backed up)"
+      else
+        err "  no key entered — skipped"
+      fi
+    else
+      warn "  DEEPSEEK_API_KEY missing — doctor needs it for web/headless; configure with:"
+      warn "    echo 'DEEPSEEK_API_KEY=<your-key>' >> ~/.dsh/.env   (then restart web)"
+    fi
+  fi
+
+  # settings.yaml: empty/corrupt → backup + minimal default (a corrupt
+  # settings file can keep the web from booting; {} is a safe temporary fix)
+  if [ -f "$settings_file" ]; then
+    if [ -s "$settings_file" ]; then
+      say "  settings.yaml present"
+    else
+      cp "$settings_file" "$settings_file.bak-$(date +%s)" 2>/dev/null
+      printf '{}\n' > "$settings_file"
+      warn "  settings.yaml was empty/corrupt — backed up, reset to {} (temporary fix)"
+    fi
+  else
+    printf '{}\n' > "$settings_file"
+    say "  settings.yaml created (minimal {})"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # doctor_run — one pass: environment → layout → diagnosis → (fix) → (restart)
 # → (agent) → report. Flags decide which stages run.
 # ---------------------------------------------------------------------------
@@ -334,19 +389,11 @@ LAUNCHER
       done < <(node "$PDEPS" 2>&1)
     fi
 
-    # 4e. LLM credentials: fix what we can (permissions), honest handoff for
-    #     what we cannot (a key is user-owned; doctor never fabricates one)
-    if [ -f "$HOME/.dsh/.env" ]; then
-      chmod 600 "$HOME/.dsh/.env" 2>/dev/null
-      if ! grep -qE '^DEEPSEEK_API_KEY=.+$' "$HOME/.dsh/.env" 2>/dev/null; then
-        warn "  DEEPSEEK_API_KEY empty/missing in ~/.dsh/.env — doctor cannot invent a key."
-        warn "  add it: echo 'DEEPSEEK_API_KEY=<your-key>' >> ~/.dsh/.env   (then restart web)"
-        note_problem
-      else
-        ok "  DEEPSEEK_API_KEY present (permissions normalized to 600)"
-      fi
-    else
-      warn "  ~/.dsh/.env missing — create it: echo 'DEEPSEEK_API_KEY=<your-key>' > ~/.dsh/.env"
+    # 4e. LLM credentials/config repair — interactive key input when possible
+    echo
+    info "== LLM config repair =="
+    fix_llm_config
+    if ! grep -qE '^DEEPSEEK_API_KEY=.+$' "$HOME/.dsh/.env" 2>/dev/null; then
       note_problem
     fi
 

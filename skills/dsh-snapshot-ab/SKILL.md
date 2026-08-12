@@ -90,8 +90,12 @@ bug-fix / simplification / architecture / process / testing；每篇带 `.zh.md`
    - 先写 handoff 说明（`dsh web` 重启会终止当前 agent 会话本身）。
    - **`ab.sh switch`**（manual 模式需 `--yes`；auto 模式需 e2e 已过）— 原子 `ln -sfn current -> 候选槽` → 验证 launcher 可启动 → 重启 web（自动杀旧 PID、nohup 启动、轮询 HTTP 200）→ phase=`switched`、confirmed=`false`。旧槽原样保留 = 回滚点。
    - **装了 `dsh-web-guard` 时**：ab.sh 杀 web 后守护会自动用完整环境拉起新 current（更可靠的兜底）；ab.sh 自己先启动成功则守护不抢。无论谁拉起，**切换后浏览器必须硬刷新（Cmd+Shift+R）**——旧 tab 里是切换前加载的 boot manifest，新 client 插件/面板（如 dsh-track 的 ◆）只在刷新后的页面出现（2026-08-11 实测坑）。
-8. **确认稳定**：用户确认新版本可用后 **`ab.sh confirm`**（confirmed=true）。在此之前 `prepare` 拒绝回收回滚槽（除非 `--force`）。
+8. **确认稳定 = 生产验收**：**`ab.sh confirm`** 内置生产验收 gate（2026-08-11 事故后新增）——生产端口 HTTP 200、运行 web 进程来自当前槽、`dsh` launcher 链解析进当前槽、扩展 client manifest 在页面上，四项全过才写 `confirmed=true`（confirmed=true 后 `prepare` 才允许回收回滚槽）。**任何一项不过即拒绝确认**——"确认"不再是口头背书，而是对生产等价路径的实测。
 9. 下一天：A/B 角色互换，`prepare` 自动选非当前槽。
+
+> 事故复盘：2026-08-11 切换事故（dryrun 全绿但生产起不来）的完整根因链与防复发措施见
+> [`references/postmortem-ab-switch-20260811.md`](references/postmortem-ab-switch-20260811.md)（中）/ 
+> [`references/postmortem-ab-switch-20260811.en.md`](references/postmortem-ab-switch-20260811.en.md)（英）。
 
 ## 回滚
 

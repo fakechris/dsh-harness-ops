@@ -91,7 +91,7 @@ cmd_status() {
   done
   ab_log "phase: $phase  current-slot: ${cur:-<unset>}  confirmed: $confirmed"
   local wp
-  wp=$(ps aux | grep '[b]in.ts web' | head -2 | awk '{print $2, $9, $11, $12, $13}' | tr '\n' '; ')
+  wp=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | head -2 | awk '{print $2, $9, $11, $12, $13}' | tr '\n' '; ')
   ab_log "running web: ${wp:-<none>}"
   if [ -f "$AB_CONFIG_FILE" ]; then
     ab_log "extensions:"
@@ -538,10 +538,60 @@ cmd_switch() {
 }
 
 cmd_confirm() {
+  # Production-acceptance gate (2026-08-11 incident): confirming means "the
+  # RUNNING version is verifiably healthy through the PRODUCTION path" — not
+  # just "the user said ok". Reject the confirm unless:
+  #   1. the production port answers HTTP 200,
+  #   2. the running web process actually comes from the current slot,
+  #   3. the `dsh` launcher chain resolves into the current slot,
+  #   4. every configured extension client id is in the production boot manifest.
+  local port code cur dir proc html cids cid ok=1 launcher resolved
+  port=$(ab_config_get '.web.productionPort // 3080')
+  cur=$(ab_current_slot); dir=$(ab_slot_dir "$cur")
+  ab_log "production acceptance (confirm gate) on http://127.0.0.1:$port ..."
+  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1:$port/" 2>/dev/null || echo 000)
+  if [ "$code" = "200" ]; then
+    ab_ok "  production HTTP 200"
+  else
+    ab_err "  production web on :$port not answering HTTP 200 (got $code)"
+    ok=0
+  fi
+  # the running process may reference the slot by its real path OR through the
+  # `current` symlink (both mean "running the current slot's code").
+  proc=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | grep -E "$dir|$AB_SOURCE/current" | head -1 || true)
+  if [ -n "$proc" ]; then
+    ab_ok "  running web process from current slot $dir"
+  else
+    ab_err "  no running web process from current slot $dir"
+    ok=0
+  fi
+  launcher=$(command -v dsh || true)
+  if [ -n "$launcher" ]; then
+    resolved=$(resolve_link "$launcher")
+    case "$resolved" in
+      "$dir"/*|"$AB_SOURCE/current"/*) ab_ok "  launcher chain -> $resolved (inside current slot)" ;;
+      *) ab_err "  launcher chain resolves to $resolved (outside current slot $dir)"; ok=0 ;;
+    esac
+  else
+    ab_warn "  no 'dsh' on PATH — skipping launcher-chain check"
+  fi
+  cids=$(ab_config_get '.web.smokeClientIds // [] | .[]')
+  if [ -n "$cids" ]; then
+    html=$(curl -s --max-time 10 "http://127.0.0.1:$port/" 2>/dev/null || true)
+    for cid in $cids; do
+      if printf '%s' "$html" | grep -q "\"id\":\"$cid\""; then
+        ab_ok "  client manifest: $cid present"
+      else
+        ab_err "  client manifest: $cid MISSING on production"
+        ok=0
+      fi
+    done
+  fi
+  [ "$ok" = "1" ] || ab_die "production acceptance FAILED — do not confirm an unverifiable version; fix the running deployment and re-run confirm"
   local at; at=$(ab_now)
   ab_state_set --arg at "$at" '.confirmed = true | .history += [{ at: $at, action: "confirm" }]'
   ab_save_state
-  ab_ok "current marked confirmed — the rollback slot may now be recycled by the next prepare"
+  ab_ok "current marked confirmed (production-accepted) — the rollback slot may now be recycled by the next prepare"
 }
 
 cmd_rollback() {
@@ -576,7 +626,7 @@ cmd_rollback() {
 ab_restart_web() {
   local port pid i code log cwd pids
   port=$(ab_config_get '.web.productionPort // 3080')
-  pids=$(ps aux | grep '[b]in.ts web' | awk '{print $2}')
+  pids=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | awk '{print $2}')
   if [ -n "$pids" ]; then
     ab_warn "  stopping running dsh web instance(s): $(printf '%s' "$pids" | tr '\n' ' ')"
     for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done

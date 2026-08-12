@@ -557,7 +557,7 @@ PROMPT
     waited=0; AGENT_TIMEOUT="${DSH_DOCTOR_AGENT_TIMEOUT:-300}"
     last_pos=0; agent_log=
     while kill -0 "$APID" 2>/dev/null && [ "$waited" -lt "$AGENT_TIMEOUT" ]; do
-      sleep 4; waited=$((waited+4))
+      sleep 2; waited=$((waited+2))
       # live stream: the headless agent writes its OWN session log as it
       # works — reasoning chain (CoT), tool calls, generated text. Read the
       # NEW lines since the last tick and print their full content, so the
@@ -599,7 +599,7 @@ for line in sys.stdin:
         # one line per event, prefix [llm] so the CoT reads like a stream
         for ln in txt.splitlines():
             if ln.strip():
-                print("  [llm] " + ln.strip()[:400])
+                print("  [llm] " + ln.strip())
 ' 2>/dev/null
           last_pos=$total
         fi

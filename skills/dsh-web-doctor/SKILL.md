@@ -2,8 +2,8 @@
 name: dsh-web-doctor
 description: >-
   dsh web 挂了/A/B 双槽都起不来时的 out-of-band 医生：不依赖 web 进程，纯终端一键诊断
-  （web 健康、launcher 链、扩展 relink、槽可启动性、session 存储、web.log、最近会话最后发生的事）
-  → 确定性自动修复（relink 自愈、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
+  （web 健康、launcher 链、扩展 relink、**任意插件的依赖完整性**、槽可启动性、session 存储、web.log、最近会话最后发生的事）
+  → 确定性自动修复（relink 自愈、**任意插件依赖自愈**、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
   或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
   "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（终端跑 dsh-doctor，无参数即交互菜单：体检/LLM 自愈/确定性修复+拉起）。
@@ -75,7 +75,7 @@ dsh-doctor --quiet            # 少输出
 |---|---|
 | （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
 | `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
-| `--fix` | 确定性自动修复：relink 自愈 → bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查**（不依赖 LLM） |
+| `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
 
 ## 分层：确定性是"手和眼"，LLM 是"大脑"
@@ -117,8 +117,14 @@ bash-sandbox/fs-policy/commands）。
 4. **槽可启动**：current 有 `bin/dsh` 或编译产物 `apps/cli/lib/bin.js`。
 5. **session 存储（L0 文件层）**：`session-store-check.mjs` 逐日志校验可解压、header 正确、
    尾部合法 JSON——**只用 node 标准库 + zstd CLI，不加载任何 DSH 编译包**。
-6. **web.log 尾部**：最近启动失败的直接证据。
-7. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
+6. **web.log 尾部 + boot 失败提示**：`tail` 最近失败 + 自动提取 `Cannot find package` /
+   `failed to import loader entry` / `plugin tree failed to load` 关键错误（插件类故障的直接线索）。
+7. **profile bundles 依赖检查（任何插件）**：`plugin-deps-check.mjs` 读 web profile 的
+   `dependencies`（out-of-tree bundles），扫描每个插件 `lib/` 产物的 `@deepseek-ai/*` /
+   `cordis` import vs 其 node_modules——**不依赖 ab-config**，未来装的任何插件（dsh-loop、
+   dsh-kb-sieve…）缺失依赖都会被抓住；缺失时自动从 current 槽 packages 按包名找修复来源
+   （`FIXABLE`）或报告无来源（`MISSING`）。
+8. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
    （类型/seq/时间/内容提示）——"挂了之前系统在做什么"。
 
 ## 依赖分层（极小依赖设计）

@@ -141,24 +141,66 @@ ab_other_slot() {
 
 ab_is_initialized() { [ "$(ab_state_get '.current // ""')" != "" ]; }
 
-# ab_boot_cmd <dir> — command line that boots this slot's dsh CLI.
-# 0810-era slots ship bin/dsh (a tsx wrapper); the 20260811 snapshot removed it
-# (source-run without a managed installer), so fall back to the same recipe the
-# old wrapper used, anchored to the slot by absolute paths + the tsconfig hook.
+# ab_boot_cmd <dir> — command line that boots this slot's dsh CLI in the SAME
+# way production runs it. Order matters:
+#   1. bin/dsh        — the launcher chain (~/.local/bin/dsh -> current/bin/dsh)
+#                       uses it; 0810-era slots ship it (a tsx wrapper).
+#   2. apps/cli/lib/bin.js — 20260811+ removed bin/dsh; production runs the
+#                       COMPILED CLI entry (pure node ESM, no tsconfig paths,
+#                       no tsx). Booting a candidate through tsx instead hides
+#                       runtime resolution gaps: tsx applies tsconfig paths, so
+#                       an extension dep that is missing from node_modules (but
+#                       present in the slot's packages or via paths) passes the
+#                       smoke test and then kills the real server with
+#                       ERR_MODULE_NOT_FOUND (2026-08-11 dsh-llm incident).
+#   3. tsx source     — last resort only when nothing was built.
 # Callers expand it UNQUOTED inside their subshell (paths contain no spaces).
 ab_boot_cmd() {
   local dir="$1"
   if [ -x "$dir/bin/dsh" ]; then
     printf '%s\n' "$dir/bin/dsh"
+  elif [ -x "$dir/apps/cli/lib/bin.js" ]; then
+    printf '%s\n' "$dir/apps/cli/lib/bin.js"
   else
     printf 'env NODE_USE_ENV_PROXY=1 TSX_TSCONFIG_PATH=%s/tsconfig.json node --import %s/node_modules/tsx/dist/esm/index.mjs %s/apps/cli/src/bin.ts\n' "$dir" "$dir" "$dir"
   fi
 }
 
 # ab_slot_usable <dir> — true when the slot has a bootable CLI: bin/dsh
-# (0810-era) or the tsx source entry (20260811+ removed bin/dsh).
+# (0810-era), the compiled CLI entry (20260811+), or the tsx source entry.
 ab_slot_usable() {
-  [ -x "$1/bin/dsh" ] || [ -f "$1/apps/cli/src/bin.ts" ]
+  [ -x "$1/bin/dsh" ] || [ -x "$1/apps/cli/lib/bin.js" ] || [ -f "$1/apps/cli/src/bin.ts" ]
+}
+
+# ab_ensure_slot_launcher <dir> — 20260811+ snapshots removed bin/dsh from the
+# tree; the launcher chain (~/.local/bin/dsh -> current/bin/dsh) then breaks
+# after a cutover ("dsh: command not found", 2026-08-11). Materialize a
+# slot-local bin/dsh wrapper that boots the compiled CLI entry, so the chain
+# stays valid on every slot. Idempotent; call after building a slot.
+ab_ensure_slot_launcher() {
+  local dir="$1"
+  [ -x "$dir/bin/dsh" ] && return 0
+  [ -x "$dir/apps/cli/lib/bin.js" ] || return 0
+  mkdir -p "$dir/bin"
+  cat > "$dir/bin/dsh" <<'EOF'
+#!/bin/sh
+# slot launcher for snapshots without bin/dsh (20260811+): boots the compiled
+# CLI entry apps/cli/lib/bin.js (production node ESM). Managed by ab.sh
+# (ab_ensure_slot_launcher); do not edit — it is regenerated on prepare.
+set -eu
+script=$0
+while [ -L "$script" ]; do
+  target=$(readlink "$script")
+  case $target in
+    /*) script=$target ;;
+    *) script=$(dirname "$script")/$target ;;
+  esac
+done
+root=$(CDPATH='' cd -- "$(dirname -- "$script")/.." && pwd)
+exec node "$root/apps/cli/lib/bin.js" "$@"
+EOF
+  chmod +x "$dir/bin/dsh"
+  ab_log "  slot launcher -> $dir/bin/dsh (compiled CLI entry)"
 }
 
 # ---- misc -------------------------------------------------------------------

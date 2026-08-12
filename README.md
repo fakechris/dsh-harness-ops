@@ -190,7 +190,10 @@ $AB prepare                # 自动选非当前槽；也可显式 --slot b / --s
                            # 流水线：检出快照 → pnpm install --frozen-lockfile
                            #        → build:lib + build:web
                            #        → 扩展 relink + 生成 tsconfig.ab.json + typecheck/build/test（DSH_SOURCE=候选槽）
-                           #        → 候选 bin/dsh web 在 staging 端口(3081)冒烟 HTTP 200
+                           #        → 扩展运行时依赖检查（扫产物裸 import vs node_modules，缺链接即失败——
+                           #          build/test 走 tsconfig paths/vitest alias 会掩盖漏链，生产 node ESM 不会）
+                           #        → 无 bin/dsh 的槽自动生成 launcher 包装器（20260811+ 快照删了 bin/dsh）
+                           #        → 候选在 staging 端口(3081)冒烟 HTTP 200（启动路径与生产一致，纯 node ESM）
                            # 全绿 → phase=prepared，证据写入 ab-state.json
                            # 任何一步失败 → 还原扩展 relink、current 不动、phase 回 idle（见场景 G）
 

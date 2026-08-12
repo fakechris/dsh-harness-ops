@@ -72,7 +72,9 @@ bug-fix / simplification / architecture / process / testing；每篇带 `.zh.md`
 3. **`ab.sh prepare [--slot b] [--skip-web]`** — 在**非当前槽**执行完整流水线：
    - 检出候选快照（worktree reset / 新建）→ `pnpm install --frozen-lockfile` → harness `build:lib`（+`build:web`，除非 `--skip-web`）。
    - 扩展挂接：relink node_modules → 候选槽；生成 `tsconfig.ab.json`（把扩展 tsconfig 里的 `/Users/chris/.dsh/source/current` 前缀替换为候选槽）；用 `DSH_SOURCE=<候选槽>` 跑扩展的 typecheck/build/test；同步 skills 到 `~/.dsh/skills/`。
-   - 候选槽 `bin/dsh web` 在**staging 端口**（默认 3081）冒烟：HTTP 200 + 配置的 smokePaths；`--keep` 保留 staging 服务器供人工浏览器验收。
+   - **扩展运行时依赖检查**：扩展的 build/test 走 tsconfig paths / vitest alias 解析 `@deepseek-ai/*`，而生产 node ESM 只认扩展 node_modules 的 relink 链接——两者不同步时（如扩展新增依赖但 ab-config relink 没加）测试全绿、生产却 `ERR_MODULE_NOT_FOUND`（2026-08-11 dsh-llm 事故）。prepare 会扫描扩展构建产物的裸 import，缺链接直接失败并提示补 `extensions[].relink`。
+   - **槽 launcher 补位**：20260811+ 快照删了 `bin/dsh`，prepare 会给无 launcher 的槽生成 `bin/dsh` 包装器（指向编译产物 `apps/cli/lib/bin.js`），保证切后 `dsh` 命令链（`~/.local/bin/dsh → current/bin/dsh`）不断。
+   - 候选槽在 **staging 端口**（默认 3081）冒烟：**启动路径与生产一致**（优先 `lib/bin.js` 纯 node ESM，不用 tsx——tsx 会读 tsconfig paths，掩盖漏链）→ HTTP 200 + 配置的 smokePaths；`--keep` 保留 staging 服务器供人工浏览器验收。
    - 任何一步失败：恢复扩展 relink/tsconfig，`current` 不动，phase 回 `idle`，**不切换**。
    - 成功后 phase=`prepared`，证据写入 ab-state.json（快照、tip、扩展构建结果）。
 4. **`ab.sh verify`** — 对已 prepared 的候选重跑扩展测试 + web 冒烟（不改状态），用于复查。

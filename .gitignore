@@ -5,3 +5,6 @@ node_modules/
 # plugin build artifacts
 plugins/*/lib/
 plugins/*/node_modules/
+
+# nested git worktrees (inside the workspace sandbox root)
+.worktrees/

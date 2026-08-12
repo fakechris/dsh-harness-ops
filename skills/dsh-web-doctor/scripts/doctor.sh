@@ -549,42 +549,59 @@ PROMPT
     say "  watching its live session log below; final answer appears when it finishes (1-3 min typical):"
     # the agent writes its own session log as it works (reasoning chunks,
     # tool calls, generated text) — tail that so the user SEES it working.
-    before=$(ls -t "$HOME"/.dsh/sessions/*/*/session.jsonl.zstd 2>/dev/null | head -1)
+    # the web's own session (current chat) is also being written constantly —
+    # the agent's session is the NEW one that did not exist before launch.
+    before_list=$(find "$HOME/.dsh/sessions" -name session.jsonl.zstd 2>/dev/null)
     ( DSH_PERMISSION_MODE=danger-full-access dsh --profile headless "$AGENT_TASK" 2>&1 | sed 's/^/  [agent] /' ) &
     APID=$!
     waited=0; AGENT_TIMEOUT="${DSH_DOCTOR_AGENT_TIMEOUT:-300}"
+    last_pos=0; agent_log=
     while kill -0 "$APID" 2>/dev/null && [ "$waited" -lt "$AGENT_TIMEOUT" ]; do
       sleep 4; waited=$((waited+4))
-      # live activity: the newest session log (the agent's own) — show what
-      # it is doing right now (reasoning / tool / text generation)
+      # live stream: the headless agent writes its OWN session log as it
+      # works — reasoning chain (CoT), tool calls, generated text. Read the
+      # NEW lines since the last tick and print their full content, so the
+      # user SEES the whole thought process, not a heartbeat.
       newest=$(ls -t "$HOME"/.dsh/sessions/*/*/session.jsonl.zstd 2>/dev/null | head -1)
-      if [ -n "$newest" ] && [ "$newest" != "$before" ]; then
-        act=$(zstd -dc "$newest" 2>/dev/null | tail -1 | python3 -c '
+      if [ -n "$newest" ] && ! printf '%s\n' "$before_list" | grep -qxF "$newest"; then
+        agent_log="$newest"
+        total=$(zstd -dc "$newest" 2>/dev/null | wc -l | tr -d ' ')
+        if [ "${total:-0}" -gt "$last_pos" ] 2>/dev/null; then
+          zstd -dc "$newest" 2>/dev/null | tail -n +$((last_pos + 1)) | python3 -c '
 import json, sys
-try:
-    d = json.loads(sys.stdin.read())
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
     t = d.get("type", "?")
     data = d.get("data", {}) or {}
     txt = ""
-    if t in ("assistant/chunk", "text-chunks"):
-        txt = (data.get("text", "") or "")[:70]
-    elif t == "reasoning-chunks":
-        txt = "thinking..."
+    if t == "reasoning-chunks":
+        txt = (data.get("text", "") or "").strip()
+    elif t in ("assistant/chunk", "text-chunks"):
+        txt = (data.get("text", "") or "").strip()
     elif t == "tool/call":
-        txt = "tool " + str(data.get("name", "?"))
+        a = data.get("arguments", data.get("input", ""))
+        txt = ("tool " + str(data.get("name", "?")) + " " + (str(a)[:120] if isinstance(a, str) else ""))
     elif t == "tool/result":
         txt = "tool result"
+    elif t in ("step/start", "step/end", "turn/start"):
+        txt = ""
     elif t == "user/message":
         c = data.get("content", "")
-        txt = (str(c)[:70] if not isinstance(c, list) else "prompt issued")
-    suffix = (": " + txt) if txt else ""
-    print(t + suffix)
-except Exception:
-    print("working...")
-' 2>/dev/null)
-        say "  [live] $act"
-      else
-        say "  ...agent working (${waited}s)"
+        txt = (str(c)[:120] if not isinstance(c, list) else "prompt issued")
+    if txt:
+        # one line per event, prefix [llm] so the CoT reads like a stream
+        for ln in txt.splitlines():
+            if ln.strip():
+                print("  [llm] " + ln.strip()[:400])
+' 2>/dev/null
+          last_pos=$total
+        fi
       fi
     done
     if kill -0 "$APID" 2>/dev/null; then
@@ -643,36 +660,37 @@ doctor_menu() {
     echo "=============================================================="
     if [ "$LANG_CODE" = "zh" ]; then
       echo "  1) 快速体检（只读）   // Quick check (diagnose only)"
-      echo "  2) 大模型自动修复（推荐）// LLM auto-repair (recommended): LLM 读"
-      echo "                        //   诊断+日志推理根因，发现/修复任意插件问题"
-      echo "  3) 修复配置问题（机械）// Fix config issues (mechanical, no LLM):"
+      echo "  2) 修复配置问题（机械）// Fix config issues (mechanical, no LLM):"
       echo "                        //   relink/插件依赖/launcher/session/LLM 凭据"
-      echo "  4) 退出               // Exit"
-      echo "  5) 切换语言 English   // Switch language"
-      echo "  6) 强制 LLM 验收（全绿也跑）// Force LLM acceptance"
+      echo "  3) LLM 修复（推荐）   // LLM repair (recommended): LLM 读诊断+日志"
+      echo "                        //   推理根因，发现/修复任意插件问题"
+      echo "  4) LLM 深度检测和修复 // Deep LLM check & repair (always runs,"
+      echo "                        //   不因全绿跳过)   even when diagnosis is green)"
+      echo "  5) 退出               // Exit"
+      echo "  6) 切换语言 English   // Switch language"
       printf "  选择 [1-6]: "
     else
       echo "  1) Quick check (diagnose only)          // 快速体检（只读）"
-      echo "  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）："
-      echo "                                          //   LLM 读诊断+日志推理根因，"
-      echo "                                          //   发现/修复任意插件问题"
-      echo "  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）："
+      echo "  2) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）："
       echo "     incl. relaunch web                  //   relink/插件依赖/launcher/"
       echo "                                          //   session/LLM 凭据等已知配置故障"
-      echo "  4) Exit                                 // 退出"
-      echo "  5) Switch language 中文                 // 切换语言"
-      echo "  6) Force LLM acceptance (even if green)// 强制 LLM 验收（全绿也跑）"
+      echo "  3) LLM repair (recommended)            // LLM 修复（推荐）：LLM 读诊断+日志"
+      echo "                                          //   推理根因，发现/修复任意插件问题"
+      echo "  4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，"
+      echo "                                          //   不因诊断全绿而跳过）"
+      echo "  5) Exit                                 // 退出"
+      echo "  6) Switch language 中文                 // 切换语言"
       printf "  choose [1-6]: "
     fi
     read -r choice || exit 0
     choice=${choice%$'\r'}   # pty/script input carries CR; strip it
     case "$choice" in
-      1) FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=0; doctor_run ;;
-      2) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
-      3) FLAG_FIX=1; FLAG_RESTART=1; FLAG_AGENT=0; doctor_run ;;
-      4) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
-      6) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
-      5) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
+      1) FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=0; FLAG_FORCE=0; doctor_run ;;
+      2) FLAG_FIX=1; FLAG_RESTART=1; FLAG_AGENT=0; FLAG_FORCE=0; doctor_run ;;
+      3) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=0; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
+      4) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=1; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
+      5) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
+      6) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
          [ "$LANG_CODE" = "zh" ] && echo "  已切换到中文（DSH_DOCTOR_LANG=zh 固定）" || echo "  switched to English (set DSH_DOCTOR_LANG=zh for default Chinese)"
          continue ;;
       *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-6" || echo "  invalid choice, enter 1-6"; continue ;;

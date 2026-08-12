@@ -214,11 +214,13 @@ ab_git_clean() { # "$1" dir → true if no tracked modifications
 # ab_detect_web — list every running dsh web instance as "pid port" lines.
 # A second instance shares ~/.dsh (sessions/storages) with the production one;
 # booting one is only safe for short read-only inspection. Port defaults 3080.
+# Matches both launch styles: tsx source (apps/cli/src/bin.ts web) and the
+# compiled CLI (apps/cli/lib/bin.js web, 20260811+ production entry).
 # NB: avoid `grep | head` pipelines here — under `set -o pipefail` head's early
 # close SIGPIPEs grep and the command substitution fails (set -e aborts).
 ab_detect_web() {
   local line pid port
-  ps aux | grep '[b]in.ts web' | while IFS= read -r line; do
+  ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | while IFS= read -r line; do
     [ -n "$line" ] || continue
     pid=$(printf '%s\n' "$line" | awk '{print $2}')
     port=$(printf '%s\n' "$line" | sed -n 's/.*--port \([0-9][0-9]*\).*/\1/p')

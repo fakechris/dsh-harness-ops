@@ -49,7 +49,16 @@ else
   echo "  warn: plugin dir missing: $PLUGIN"
 fi
 
-# --- 3) optional daemon -------------------------------------------------------
+# --- 3) one-command doctor entry on PATH -------------------------------------
+# The out-of-band doctor must be a SHORT command the user can type when the
+# web is down (agent/GUI unavailable): `dsh-doctor --fix --restart`.
+if [ -x "$SKILLS_DST/dsh-web-doctor/scripts/doctor.sh" ]; then
+  mkdir -p "$HOME/.local/bin"
+  ln -sfn "$SKILLS_DST/dsh-web-doctor/scripts/doctor.sh" "$HOME/.local/bin/dsh-doctor"
+  echo "  doctor -> $HOME/.local/bin/dsh-doctor  (usage: dsh-doctor [--fix] [--restart])"
+fi
+
+# --- 4) optional daemon -------------------------------------------------------
 if [ -f "$ROOT/skills/dsh-web-guard/scripts/install.sh" ]; then
   echo
   echo "  optional: install the self-healing daemon (launchd/systemd):"

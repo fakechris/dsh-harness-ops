@@ -5,7 +5,7 @@ description: >-
   （web 健康、launcher 链、扩展 relink、槽可启动性、session 存储、web.log、最近会话最后发生的事）
   → 自动修复（relink 自愈、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
-  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（在终端跑 scripts/doctor.sh）。
+  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（在终端跑 dsh-doctor（或 bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh））。
   English: out-of-band doctor for dsh web when it is down or won't boot (both A/B slots
   broken, GUI/agent unavailable). One terminal command diagnoses (web health, launcher
   chain, extension relinks, slot bootability, session store, web.log, last activity in
@@ -36,13 +36,19 @@ skills 的脚本，**不依赖任何 web 进程**。
 - **web 挂时 agent 也不可用**（agent 由 web 托管）——直接让用户在终端跑 doctor.sh，或把
   本 skill 的自愈 prompt 粘给任何可用的 agent。
 
-## 用法
+## 用法（用户角度：一条短命令）
+
+装好（`install.sh`）后，`dsh-doctor` 就在 PATH 上（`~/.local/bin/dsh-doctor`），**web 挂的时候
+直接在终端敲**：
 
 ```sh
-bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh             # 只诊断（只读）
-bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh --fix       # 诊断 + 自动修复
-bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh --fix --restart  # 诊断 + 修复 + 拉起 web
+dsh-doctor                    # 只诊断（只读）
+dsh-doctor --fix              # 诊断 + 自动修复
+dsh-doctor --fix --restart    # 诊断 + 修复 + 拉起 web（救火一条龙）
 ```
+
+底层脚本在 `~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh`（也可直接 `bash` 它），
+源码在 dsh-harness-ops 仓库 `skills/dsh-web-doctor/`。
 
 | Flag | 作用 |
 |---|---|
@@ -82,7 +88,7 @@ L1 只是增强，加载不了就降级——救火工具必须在自己要修�
 
 ```text
 dsh web 之前挂了，已跑 doctor.sh 自愈。请：
-1. 看 doctor 报告：bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh
+1. 看 doctor 报告：dsh-doctor
 2. 若还有残留问题：读 ~/.dsh/skills/dsh-session-recovery/SKILL.md（会话问题）和
    ~/.dsh/skills/dsh-snapshot-ab/SKILL.md（A/B 切换问题）
 3. 用 session-last-activity 看挂之前的最后操作，定位人为/外部原因

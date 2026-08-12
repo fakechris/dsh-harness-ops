@@ -158,9 +158,19 @@ bash skills/dsh-web-guard/scripts/install.sh   # optional: self-healing daemon
    published. Adding npm for one sub-component means a whole extra semver/CI/permission
    surface for little gain.
 3. Today, `private: true` + profile pnpm links already cover local/team installs.
+4. **The official npm presence is a private restricted scope** (researched 2026-08-12):
+   the official monorepo publishes to npmjs.com under the `@deepseek-ai` **private scope**
+   (211 packages, `0.0.1-rc.1`, NPM_TOKEN access, GitHub Actions manual dispatch from
+   `dsh-v*` tags). The public-npm 404s are the restricted design, not "not published".
+   **Third parties (us) currently have no access to that private registry** (even the
+   official devDep `dsh-repository-plugin` is still 404 there), so neither public nor
+   private npm is realistic for third-party plugins today.
 
 ### When it WOULD be worth publishing to npm (any of these):
 
+- **Official private registry opens to the org** (the official decision notes call the
+  private npm lib the future mainstream distribution: `npx -p @deepseek-ai/dsh@0.0.1-rc.1 dsh web`)
+  — then follow the official channel;
 - **Public distribution** of the bundle to users outside the org (git install forces
   them to `allowBuilds`; npm prebuilt avoids that friction);
 - **Semver range resolution** in profiles (`^0.2.0` instead of a pinned commit);
@@ -169,6 +179,26 @@ bash skills/dsh-web-guard/scripts/install.sh   # optional: self-healing daemon
 Then publish only `plugins/dsh-restart-recover` (drop `private: true`, build `lib/`
 before `pnpm publish`). The repo-level version (VERSION/tag) and the npm package
 version can evolve independently.
+
+---
+
+## 4. Hub listing (automatic after release; keep it compliant)
+
+- **Mechanism** (dsh-external/hub, private): `catalog.source.json` (human classification
+  layer) + `scripts/generate.mjs` (automatic layer: GitHub API metadata, refreshed by a
+  local **Agent Loop every 2 hours**; currently 241 repos).
+- Unclassified repos get a "please add to catalog.source.json" warning — classification
+  is not required for release, but recommended.
+- **description / topics compliance** (official template):
+  - description: one line "what it is + how to install", template
+    `DSH plugin: <what it does>; install via <install-command>`;
+  - topics: ecosystem tags (`dsh` / `deepseek-harness`, add `dsh-bundle` for bundles) +
+    functional tags, 3–6 total; `gh repo edit <owner>/<repo> --add-topic ...`.
+- **Self-check** (2026-08-12): dsh-harness-ops topics are compliant (6:
+  `deepseek-harness` `dsh` `ops` `restart` `self-heal` `snapshot-ab`); the description
+  says what it is but lacks "how to install" — add
+  `install via: git clone + bash scripts/install.sh` at the next revision. The repo is
+  visible in the hub automatic layer; manual classification not yet in catalog.source.json.
 
 ---
 

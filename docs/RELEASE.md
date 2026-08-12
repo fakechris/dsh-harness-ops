@@ -138,15 +138,39 @@ bash skills/dsh-web-guard/scripts/install.sh   # 可选：自愈守护
    **无法用 npm 分发**；能 publish 的只有 `plugins/dsh-restart-recover` 这一个 bundle 包。
    为一个子组件引入 npm 发布 = 多一套 semver/CI/权限管理，收益有限。
 3. 目前 `private: true` + profile pnpm link 已经满足本机/团队安装。
+4. **官方自身的 npm 是私有 restricted scope**（2026-08-12 调研确认）：官方主仓库发布到
+   npmjs.com 的 `@deepseek-ai` **私有 scope**（211 包、`0.0.1-rc.1`、NPM_TOKEN 访问、
+   GitHub Actions 从 `dsh-v*` tag 手动 dispatch）。公共 npm 全 404 是 restricted 设计，
+   不是"没发布"。**第三方（我们）目前拿不到私有库访问权**（官方 devDep
+   `dsh-repository-plugin` 在私有库都仍 404），所以公共/私有 npm 对第三方插件都不现实。
 
 ### 何时值得进 npm（触发条件，满足其一再动）：
 
-- **公开分发** bundle 给 org 外用户（GitHub 直装要用户手动 `allowBuilds`，npm 预构建免这一步）；
+- **官方开放私有库给 org**（未来主流分发据官方决策笔记是私有 npm 库
+  `npx -p @deepseek-ai/dsh@0.0.1-rc.1 dsh web`）——届时跟随官方通道；
+- **公开分发** bundle 给 org 外用户（git 安装要用户 `allowBuilds`，npm 预构建免这一步）；
 - 需要 **semver range 依赖解析**（profile 里写 `^0.2.0` 而不是 pin commit）；
 - 需要 **pnpm pack tarball** 给离线环境。
 
 届时只 publish `plugins/dsh-restart-recover`（去掉 `private: true`、`pnpm publish` 前构建 lib/），
 仓库级版本（VERSION/tag）与 npm 包版本可各自独立演进。
+
+---
+
+## 四、hub 收录（发布后自动生效，注意合规）
+
+- **机制**（dsh-external/hub，私有）：`catalog.source.json`（人工分类层）+ `scripts/generate.mjs`
+  （自动层：GitHub API 抓 description/language/updated，**Agent Loop 每 2 小时刷新**，当前 241 仓库）。
+- 未在 `catalog.source.json` 人工分类的仓库会生成"请加入分类"警告——分类不是发布必需，但建议补。
+- **description / topics 合规**（官方模板）：
+  - description 一行「是什么 + 怎么装」，模板：
+    `DSH plugin: <what it does>; install via <install-command>`；
+  - topics：生态标签（`dsh` / `deepseek-harness`，bundle 加 `dsh-bundle`）+ 功能标签，共 3–6 个；
+  - `gh repo edit <owner>/<repo> --add-topic ...`。
+- **现状自查**（2026-08-12）：dsh-harness-ops topics 6 个合规
+  （`deepseek-harness` `dsh` `ops` `restart` `self-heal` `snapshot-ab`）；description 有"是什么"
+  缺"怎么装"——下次修订补 `install via: git clone + bash scripts/install.sh`。
+  仓库在 hub 自动层可见，人工分类尚未加入 catalog.source.json。
 
 ---
 

@@ -264,15 +264,23 @@ PY
     fi
   fi
 
-  # 3f. web.log tail + boot-failure hints
+  # 3f. web.log tail + boot-failure hints, classified: historical vs current
   if [ -f "$DSH_SOURCE/web.log" ]; then
     echo
     say "== web.log tail =="
     tail -8 "$DSH_SOURCE/web.log" | sed 's/^/  /' >&2
+    # web up => the errors below are from PREVIOUS boots (e.g. the 2026-08-11
+    # 'exec: node: not found' residue), not the current fault; web down =>
+    # they are the likely current cause.
+    if [ "$code" = "200" ]; then
+      say "  note: web is UP — errors above are HISTORICAL (previous boot failures), not the current fault"
+    else
+      warn "  web is DOWN — errors above are likely the CURRENT fault"
+    fi
     boot_err=$(grep -oE "Cannot find package '[^']+'|failed to import loader entry [a-zA-Z_-]+|plugin tree failed to load[^;]*" "$DSH_SOURCE/web.log" 2>/dev/null | tail -3)
     if [ -n "$boot_err" ]; then
       echo
-      warn "  boot failure hints (likely cause of a plugin-related outage):"
+      warn "  boot failure hints:"
       printf '%s\n' "$boot_err" | sed 's/^/    /' >&2
     fi
   fi
@@ -322,6 +330,9 @@ PY
   if [ "$FLAG_FIX" = "1" ]; then
     echo
     info "== auto-fix =="
+    if [ "$PROBLEMS" = "0" ]; then
+      ok "diagnosis found no problems — skipping repair (no mechanical fix needed)"
+    else
 
     # 4a. relink + launcher self-heal via ab.sh status (idempotent, read-mostly)
     if [ -x "$AB" ]; then
@@ -428,6 +439,7 @@ PY
       err "current slot still not bootable"
       note_problem
     fi
+    fi   # end of the "problems found -> repair" branch
   fi
 
   # --- 5. restart (L0: self-contained kill + nohup + poll; the recovery skill's
@@ -556,20 +568,21 @@ doctor_menu() {
     echo "=============================================================="
     if [ "$LANG_CODE" = "zh" ]; then
       echo "  1) 快速体检（只读）   // Quick check (diagnose only)"
-      echo "  2) LLM 智能自愈（推荐）// LLM self-heal (needs LLM configured)"
-      echo "  3) 确定性修复+拉起    // Deterministic fix + relaunch (no LLM;"
-      echo "                        //   incl. LLM credential repair — paste a"
-      echo "                        //   missing key interactively; no LLM needed)"
+      echo "  2) 大模型自动修复（推荐）// LLM auto-repair (recommended): LLM 读"
+      echo "                        //   诊断+日志推理根因，发现/修复任意插件问题"
+      echo "  3) 修复配置问题（机械）// Fix config issues (mechanical, no LLM):"
+      echo "                        //   relink/插件依赖/launcher/session/LLM 凭据"
       echo "  4) 退出               // Exit"
       echo "  5) 切换语言 English   // Switch language"
       printf "  选择 [1-5]: "
     else
       echo "  1) Quick check (diagnose only)          // 快速体检（只读）"
-      echo "  2) LLM self-heal (recommended)          // LLM 智能自愈（需 LLM 配置正常）"
-      echo "  3) Deterministic fix + relaunch (no LLM)// 确定性修复+拉起（覆盖 relink/"
-      echo "     incl. LLM credential repair        // launcher/session/LLM 凭据修复"
-      echo "                                          // ——可交互粘贴 key 配置起来；"
-      echo "                                          // 全程不依赖 LLM）"
+      echo "  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）："
+      echo "                                          //   LLM 读诊断+日志推理根因，"
+      echo "                                          //   发现/修复任意插件问题"
+      echo "  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）："
+      echo "     incl. relaunch web                  //   relink/插件依赖/launcher/"
+      echo "                                          //   session/LLM 凭据等已知配置故障"
       echo "  4) Exit                                 // 退出"
       echo "  5) Switch language 中文                 // 切换语言"
       printf "  choose [1-5]: "

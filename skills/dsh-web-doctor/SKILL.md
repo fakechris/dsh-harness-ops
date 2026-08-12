@@ -55,18 +55,20 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
   web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
 ==============================================================
   1) Quick check (diagnose only)          // 快速体检（只读）
-  2) LLM self-heal (recommended)          // LLM 智能自愈（需 LLM 配置正常）
-  3) Deterministic fix + relaunch (no LLM)// 确定性修复+拉起（覆盖 relink/
-                                          // launcher/session 等已知故障；
-                                          // 不能修 LLM 凭据缺失——那需要
-                                          // 人工补 key 或选 2）
+  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读
+                                          //   诊断+日志推理根因，发现/修复
+                                          //   任意插件问题
+  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：
+     incl. relaunch web                  //   relink/插件依赖/launcher/session/
+                                          //   LLM 凭据等已知配置故障
   4) Exit                                 // 退出
   5) Switch language 中文                 // 切换语言
   choose [1-5]:
 ```
 
-- 不确定选什么 → **选 2**（LLM 智能自愈，推荐）
-- 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**
+- 不确定选什么 → **选 2**（大模型自动修复，推荐——能发现/修复任意插件问题）
+- 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**（机械修复配置问题）
+- 诊断全绿时 `--fix` 会**跳过修复**（"no problems — skipping repair"），不做无意义操作
 - 菜单每次跑完回到菜单，按 `4` 退出
 
 ## LLM 配置修复（检查什么 / 处理什么 / 工作流）

@@ -62,6 +62,21 @@ npm registry 现状：`@deepseek-ai/*` scope 在 npm 上**无任何包**（`npm 
 `files`（发布内容白名单）、`private: true`（**默认不发布 npm**）、`prepare` 脚本（git 安装自动构建）、
 `verify:self-contained` 脚本（自包含验证）。
 
+### 1.6 bundle 依赖与产物（官方 make-dsh-plugin / bundle-plugins.md 确认）
+
+- **依赖声明为空是设计**：bundle 插件 `dependencies` 不声明 `@deepseek-ai/*`（由 profile 的
+  pnpm 闭包挂载时注入；声明了公共 npm 解析不到反而失败）。repository 插件相反——两类相反。
+- **git 源安装语法**：`dsh plugin --profile web add "github:owner/repo#<commit>&path:/<子目录>"`，
+  指向 bundle 包目录（`&path:/` + 前导 `/`）；不要指向仓库根。
+- **产物两条路线**：
+  - **产物入库（官方推荐）**：`lib/` 等 `files` 声明内容提交进仓库 → git 安装不跑构建，
+    真一行安装，零额外步骤；
+  - **prepare 自构建（备选）**：`prepare` 脚本在 git 安装时构建——但 pnpm ≥10 默认阻止，
+    用户需在 profile `pnpm-workspace.yaml` 的 `allowBuilds` 放行（多一步交互）。
+- 本仓库 `plugins/dsh-restart-recover` 当前走 **prepare 路线**（`lib/` 在 .gitignore）；
+  本机/org 内用 `install.sh`（本地 checkout + pnpm link）无 allowBuilds 摩擦，
+  若未来公开 git 源分发再切"产物入库"。
+
 ---
 
 ## 二、dsh-harness-ops 发布规范（本仓库）

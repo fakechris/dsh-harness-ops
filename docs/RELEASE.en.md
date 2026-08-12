@@ -76,6 +76,24 @@ Key `package.json` fields: `dsh.bundle.patch` (→ cordis.patch.yml), `main`/`ex
 to npm**), a `prepare` script (auto-build on git install), and a `verify:self-contained`
 script.
 
+### 1.6 Bundle deps & artifacts (official make-dsh-plugin / bundle-plugins.md)
+
+- **Empty dependencies is by design**: a bundle must NOT declare `@deepseek-ai/*`
+  (the profile's pnpm closure injects them at mount time; declaring them fails public
+  resolution). Repository plugins are the opposite.
+- **Git-source install syntax**: `dsh plugin --profile web add "github:owner/repo#<commit>&path:/<subdir>"`,
+  pointing at the bundle package dir (`&path:/` + leading `/`); never the repo root.
+- **Two artifact routes**:
+  - **Committed artifacts (official recommendation)**: `lib/` and everything `files`
+    declares is committed → a git install runs no build, a true one-liner, zero extra steps;
+  - **Self-building `prepare` (fallback)**: builds on git install — but pnpm ≥10 blocks
+    git-dependency `prepare` by default; the user must allow it in the profile's
+    `pnpm-workspace.yaml` `allowBuilds` (one extra interactive step).
+- `plugins/dsh-restart-recover` currently uses the **prepare route** (`lib/` is
+  gitignored); org-internal installs via `install.sh` (local checkout + pnpm link) have
+  no `allowBuilds` friction. Switch to committed artifacts if we ever distribute via a
+  public git source.
+
 ---
 
 ## 2. dsh-harness-ops release policy (this repo)

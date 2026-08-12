@@ -2,8 +2,18 @@
 [English](README.en.md) | 中文
 
 
-> **这个仓库是 DSH 的"运维自愈工具箱"**：让 harness 在崩溃、升级、切换时都能自动恢复、
-> 无需人工干预。四个组件各管一段：
+> **为什么做这个（开发者视角）**：我在给 DSH 写插件的过程中，被三个"不方便"反复折磨，
+> 这个仓库就是这些痛点的解药：
+>
+> 1. **每天官方发新快照，升级像走钢丝** —— agent 自动做 A/B 切换：旧插件先迁移过去、
+>    构建 + 验收全过才原子切换，出问题一条命令回滚，旧版本永远兜底。
+> 2. **开发时频繁重启，改一次断一次** —— 插件 host 端不支持热加载，改完必重启，重启后
+>    agent 就断了。现在守护自动拉起 web，agent 从被打断的地方自动续接，**无人值守继续干活**。
+> 3. **web 彻底挂了的时候** —— A/B 都起不来、GUI 和 agent 全不可用（agent 跑在 web 里，
+>    web 挂 = 没有 agent 帮我）。终端一条命令 `dsh-doctor`：诊断 → 机械修复已知配置问题 →
+>    或让 LLM 深度检测修复（完整思维链实时展示）→ 把 web 拉回来。
+>
+> **组件**（自愈 + 版本轮换的完整拼图）：
 >
 > | 组件 | 类型 | 管什么 |
 > |---|---|---|
@@ -69,21 +79,27 @@ dsh-doctor                    # 交互菜单（默认英文，菜单里选 5 切
   web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
 ==============================================================
   1) Quick check (diagnose only)          // 快速体检（只读）
-  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读诊断+日志
-                                          //   推理根因，发现/修复任意插件问题
-  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
+  2) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
      incl. relaunch web                  //   插件依赖/launcher/session/LLM 凭据等
                                           //   已知配置故障
-  4) Exit                                 // 退出
-  5) Switch language 中文                 // 切换语言
+  3) LLM repair (recommended)            // LLM 修复（推荐）：LLM 读诊断+日志推理根因，
+                                          //   发现/修复任意插件问题（含核心不兼容、
+                                          //   插件配置被改乱）
+  4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，不因诊断
+                                          //   全绿跳过；完整思维链实时展示）
+  5) Exit                                 // 退出
+  6) Switch language 中文                 // 切换语言
 ```
 
+**LLM 深度检测/修复时**，`[llm]` 流式输出**完整思维链**——它怎么想（推理全文）、决定跑什么
+命令（工具 + 完整命令）、得到什么结果，全程可见，不是黑盒。
+
 **分层设计**（为什么这样）：
-- **确定性层**（菜单 3）：传感器+执行器——秒级、零 LLM 成本、web 挂得再彻底也能跑；
+- **确定性层**（菜单 2）：传感器+执行器——秒级、零 LLM 成本、web 挂得再彻底也能跑；
   覆盖已知配置故障（relink/插件依赖/launcher/session/LLM 凭据）；诊断全绿时自动跳过修复
-- **LLM 大脑**（菜单 2）：`dsh --profile headless` 起 one-shot agent，读报告+日志推理根因，
+- **LLM 大脑**（菜单 3/4）：`dsh --profile headless` 起 one-shot agent，读报告+日志推理根因，
   **能发现/修复确定性规则想不到的问题**（DSH 核心不兼容改动、插件配置被改乱、新故障模式）；
-  headless 不加载 web 的扩展 bundle，所以扩展故障不影响它
+  headless 不加载 web 的扩展 bundle，所以扩展故障不影响它；菜单 4 强制深度检测（全绿也跑）
 
 **诊断 9 项**：web 健康 / launcher 链 / 扩展 relink / 槽可启动 / session 文件层（97 个日志）/
 web.log（分类历史残留 vs 当前故障）/ profile bundles 依赖（任意插件）/ LLM 配置（.env key）/

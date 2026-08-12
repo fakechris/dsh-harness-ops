@@ -94,3 +94,19 @@
 1. **验收必须走生产等价路径**：冒烟/启动类 gate 一律用与生产相同的解析环境（纯 node ESM + node_modules），禁止用 tsx/tsconfig paths 这类"更宽容"的路径做唯一验证——宽容的路径只能作为兜底，不能作为 gate。**确认（confirm）同样必须基于生产验收。**
 2. **依赖清单三处必须一致**：扩展新增 `@deepseek-ai/*` 依赖时，tsconfig paths、vitest alias、ab-config relink **三处同改**。`ext_check_runtime_deps` 会在漏改 relink 时拦下 prepare。
 3. **"绕过"不是修复**：任何"某条路径起不来就换条路径"的修复，必须同时检查那条路径本身（如 launcher 链 `dsh --version`）是否对用户/guard 可用。
+
+---
+
+## 后续（2026-08-12 补）：同一个问题两次复发，催生了 out-of-band doctor
+
+1. **dsh-llm 链接当天夜里又被外部清理**（20:44–22:52）：手工 `ln` 的链接是无主资产，
+   不在任何管理机制内，被碰 `node_modules/@deepseek-ai/` 的操作清掉后**无任何机制发现**，
+   直到用户手动 `dsh web` 再挂一次（22:52）——**同一个病，第二次发作**。
+2. **6 个旧会话打不开**（0810 时期 dsh-track 写进 session 的自定义事件，0811 白名单不认，
+   `SessionFormatUnsupportedError`）。
+3. 现场修复每一步（查 session 尾部 → 找根因 → 修 relink → 修会话 → 拉起 web）**都能脚本化**，
+   且 **agent 跑在 web 里，web 挂 = 没有 agent 能帮我**——于是做了 out-of-band 的
+   **`dsh-web-doctor`**（`dsh-doctor` 一条命令：诊断 9 项 → 机械修复配置 → LLM 深度检测修复
+   [完整思维链实时展示] → 拉起 web），并给 ab.sh 加了 **relink 自愈**（status/verify/confirm/
+   restart 每次校验并自动重建缺失链接）。动机与完整事故链：
+   `docs/web-doctor-motivation.md`。

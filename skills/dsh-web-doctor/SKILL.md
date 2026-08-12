@@ -3,7 +3,8 @@ name: dsh-web-doctor
 description: >-
   dsh web 挂了/A/B 双槽都起不来时的 out-of-band 医生：不依赖 web 进程，纯终端一键诊断
   （web 健康、launcher 链、扩展 relink、槽可启动性、session 存储、web.log、最近会话最后发生的事）
-  → 自动修复（relink 自愈、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证。
+  → 确定性自动修复（relink 自愈、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
+  或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
   "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（在终端跑 dsh-doctor（或 bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh））。
   English: out-of-band doctor for dsh web when it is down or won't boot (both A/B slots
@@ -42,9 +43,10 @@ skills 的脚本，**不依赖任何 web 进程**。
 直接在终端敲**：
 
 ```sh
-dsh-doctor                    # 只诊断（只读）
-dsh-doctor --fix              # 诊断 + 自动修复
+dsh-doctor                    # 只诊断（只读，秒级）
+dsh-doctor --fix              # 诊断 + 确定性自动修复（保底，不依赖 LLM）
 dsh-doctor --fix --restart    # 诊断 + 修复 + 拉起 web（救火一条龙）
+dsh-doctor --agent            # LLM 主脑：体检 → 交给 headless LLM agent 找根因/修复/拉回
 ```
 
 底层脚本在 `~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh`（也可直接 `bash` 它），
@@ -53,8 +55,21 @@ dsh-doctor --fix --restart    # 诊断 + 修复 + 拉起 web（救火一条龙�
 | Flag | 作用 |
 |---|---|
 | （无） | 只读诊断，报告问题清单（exit 0 全好 / exit 1 有问题） |
-| `--fix` | 自动修复：relink 自愈 → bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查** |
+| `--fix` | 确定性自动修复：relink 自愈 → bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
+| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ 读报告+日志推理根因 → 用确定性原语（或直接命令）修复 → 验证 200 → 输出结论 |
+
+## 分层：确定性是"手和眼"，LLM 是"大脑"
+
+| 层 | 什么 | 为什么需要 |
+|---|---|---|
+| **L0/L1 确定性**（`--fix`） | 检查原语（curl/readlink/文件存在性/zstd+JSONL）+ 修复原语（ln -sfn/写包装器/restart） | 秒级、零 LLM 成本、web 挂得再彻底也能跑；给 LLM 提供**可靠的事实和可执行动作** |
+| **LLM 主脑**（`--agent`） | headless one-shot agent：读报告/session 尾部/web.log → 推理根因 → 决策修复 → 验证 | **适应未知与新版本**：DSH 改版、新故障模式，确定性规则想不到——LLM 读新症状自己推理（实测：它识别出 web.log 的 `node: not found` 是 8/10 历史残留而非当前故障） |
+
+**为什么不能只有确定性**：写死的规则（产物路径、错误形态、配置格式）会随 DSH 改版失效
+（0811 就删过 `bin/dsh`）；新故障模式规则想不到。
+**为什么不能只有 LLM**：web 挂时 agent 起不来（headless 也依赖 harness 本身）；让 LLM 扫 92 个
+session 太慢太贵；修复需要不变的操作原语。**确定性传感器 + LLM 大脑是正解。**
 
 ## 诊断项（doctor 查什么）
 
@@ -84,11 +99,12 @@ L1 只是增强，加载不了就降级——救火工具必须在自己要修�
 
 ## 自愈 prompt（web 恢复后 / 给其它 agent）
 
-用户（或任何可用 agent）把下面这段粘给恢复后的会话，即可接续排查：
+`dsh-doctor --agent` 已内置完整自愈 prompt 并自动调 headless LLM。以下文本用于**没有
+headless**（或想手动把上下文交给 web 恢复后的会话）时：
 
 ```text
-dsh web 之前挂了，已跑 doctor.sh 自愈。请：
-1. 看 doctor 报告：dsh-doctor
+dsh web 之前挂了，已跑 dsh-doctor 自愈。请：
+1. 看 doctor 报告：dsh-doctor（或 /tmp/dsh-doctor-report.txt）
 2. 若还有残留问题：读 ~/.dsh/skills/dsh-session-recovery/SKILL.md（会话问题）和
    ~/.dsh/skills/dsh-snapshot-ab/SKILL.md（A/B 切换问题）
 3. 用 session-last-activity 看挂之前的最后操作，定位人为/外部原因

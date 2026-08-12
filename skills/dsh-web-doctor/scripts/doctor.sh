@@ -46,15 +46,26 @@ AB="$SKILLS_DIR/dsh-snapshot-ab/scripts/ab.sh"
 REC="$SKILLS_DIR/dsh-session-recovery/scripts"
 PORT="${DSH_WEB_PORT:-3080}"
 
-FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0
+FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --fix) FLAG_FIX=1; shift ;;
     --restart) FLAG_RESTART=1; shift ;;
+    --agent) FLAG_AGENT=1; shift ;;
     --quiet) FLAG_QUIET=1; shift ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
+
+# --agent: the LLM is the doctor's brain. Tee every deterministic check to a
+# report file, then hand it to a one-shot headless agent (dsh --profile
+# headless) together with the self-heal prompt — the LLM reads the report,
+# reasons about the root cause (adapting to whatever changed in DSH), fixes
+# via the deterministic primitives (or direct commands), and relaunches web.
+REPORT="${DSH_DOCTOR_REPORT:-/tmp/dsh-doctor-report.txt}"
+if [ "$FLAG_AGENT" = "1" ]; then
+  exec > >(tee "$REPORT") 2>&1
+fi
 
 say()  { [ "$FLAG_QUIET" = "1" ] || printf '%s\n' "$*"; }
 warn() { printf '\033[1;33m[doctor]\033[0m %s\n' "$*" >&2; }
@@ -316,6 +327,51 @@ if [ "$FLAG_RESTART" = "1" ]; then
       exit 2
     fi
   fi
+fi
+
+# --- 5b. LLM brain (--agent): hand the deterministic report to a one-shot
+#        headless agent. The LLM reasons over the report + last activity +
+#        logs, picks (and adapts) the fix, executes it, and verifies. This is
+#        the resilient layer: deterministic rules can't anticipate a changed
+#        DSH, an LLM can read the new symptoms and reason its way out.
+if [ "$FLAG_AGENT" = "1" ]; then
+  echo
+  info "== LLM brain: handing the report to a one-shot headless agent =="
+  if ! command -v dsh >/dev/null 2>&1; then
+    err "'dsh' not on PATH — cannot launch the headless agent (fall back to: dsh-doctor --fix --restart)"
+    exit 1
+  fi
+  if ! dsh --profile headless --help >/dev/null 2>&1; then
+    err "'dsh --profile headless' unavailable — LLM brain cannot start (fall back to: dsh-doctor --fix --restart)"
+    exit 1
+  fi
+  AGENT_TASK=$(cat <<'PROMPT'
+你是 dsh web 的 out-of-band 自愈 agent（one-shot）。web（3080）挂了或状态异常，
+由你诊断根因、修复、把 web 拉回来。headless 模式下你可用工具读文件/执行命令。
+
+步骤：
+1. 读 /tmp/dsh-doctor-report.txt —— dsh-doctor 的确定性体检报告
+   （web/launcher/relink/槽可启动/session 文件层/web.log 尾部/最近活动）。
+2. 读 ~/.dsh/skills/dsh-web-doctor/SKILL.md —— 可用修复原语说明。
+3. 需要更深入时：node ~/.dsh/skills/dsh-web-doctor/scripts/session-last-activity.mjs
+   看最近会话最后发生的事；tail ~/.dsh/source/web.log。
+4. 找根因 → 修复。优先复用确定性原语：
+   bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh --fix
+   （relink 自愈 / bin/dsh 补位 / 未知事件 ignorable / 损坏日志修复）；
+   也可直接执行修复命令（如 ln -sfn 重建扩展链接）。
+5. 验证：curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3080/ 应为 200；
+   若 web 未起，用 restart-dsh-web.sh 或 nohup dsh web 拉起。
+6. 最终输出（简洁中文）：根因一句话、做了什么、当前 web 状态；
+   若无法修复：卡在哪一步、缺什么、需要用户做什么。
+
+约束：你是自愈 agent，web/GUI 可能不可用；只做必要修复，不动用户数据；
+不确定的操作先读报告/日志再决定。不要臆造；查不到就明说。
+PROMPT
+)
+  ok "launching: dsh --profile headless <self-heal task> (report: $REPORT)"
+  dsh --profile headless "$AGENT_TASK" 2>&1 | sed 's/^/  [agent] /'
+  echo
+  info "LLM brain finished — verify with: dsh-doctor  (or curl http://127.0.0.1:3080/)"
 fi
 
 # --- 6. report ---------------------------------------------------------------

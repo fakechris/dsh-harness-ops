@@ -17,7 +17,7 @@
       "/Users/chris/.dsh/source/slot-b/apps/web/node_modules/@types"
     ],
     "paths": {
-      "cordis": [
+      "@deepseek-ai/cordis": [
         "/Users/chris/.dsh/source/slot-b/vendor/cordis/lib/types/index.d.ts"
       ],
       "@deepseek-ai/dsh-agent": [

@@ -193,14 +193,36 @@ PY
     fi
   fi
 
-  # 3f. web.log tail
+  # 3f. web.log tail + boot-failure hints
   if [ -f "$DSH_SOURCE/web.log" ]; then
     echo
     say "== web.log tail =="
     tail -8 "$DSH_SOURCE/web.log" | sed 's/^/  /' >&2
+    boot_err=$(grep -oE "Cannot find package '[^']+'|failed to import loader entry [a-zA-Z_-]+|plugin tree failed to load[^;]*" "$DSH_SOURCE/web.log" 2>/dev/null | tail -3)
+    if [ -n "$boot_err" ]; then
+      echo
+      warn "  boot failure hints (likely cause of a plugin-related outage):"
+      printf '%s\n' "$boot_err" | sed 's/^/    /' >&2
+    fi
   fi
 
-  # 3g. what happened last (most recently active sessions)
+  # 3g. generic plugin dependency check — ANY out-of-tree bundle in the web
+  #     profile (not just ab-config'd ones): dsh-loop, dsh-kb-sieve, whatever
+  #     gets installed later. A missing dep here is a boot-killer.
+  PDEPS="$SKILLS_DIR/dsh-web-doctor/scripts/plugin-deps-check.mjs"
+  if [ -f "$PDEPS" ]; then
+    echo
+    say "== profile bundles dependency check =="
+    while IFS= read -r line; do
+      case "$line" in
+        FIXABLE:*) warn "  $line" ;;
+        MISSING:*) err "  $line"; note_problem ;;
+        ok:*) say "  $line" ;;
+      esac
+    done < <(node "$PDEPS" 2>&1)
+  fi
+
+  # 3h. what happened last (most recently active sessions)
   echo
   say "== last activity in recent sessions =="
   if [ -f "$SKILLS_DIR/dsh-web-doctor/scripts/session-last-activity.mjs" ]; then
@@ -260,7 +282,25 @@ LAUNCHER
       fi
     fi
 
-    # --- 4d. verify fixes (re-check what we just repaired) ---------------------
+    # 4d. generic plugin dependency self-heal (any bundle; source auto-found in
+    #     the current slot's packages by package name — no ab-config mapping)
+    if [ -f "$PDEPS" ]; then
+      while IFS= read -r line; do
+        case "$line" in
+          FIXABLE:*)
+            pkg=$(printf '%s' "$line" | sed 's/FIXABLE: \([^ ]*\).*/\1/')
+            repo=$(printf '%s' "$line" | sed 's/.*repo=\([^ ]*\).*/\1/')
+            src=$(printf '%s' "$line" | sed 's/.*-> //')
+            link="$repo/node_modules/$pkg"
+            mkdir -p "$(dirname "$link")"
+            ln -sfn "$src" "$link"
+            ok "  plugin dep self-heal: $link -> $src"
+            ;;
+        esac
+      done < <(node "$PDEPS" 2>&1)
+    fi
+
+    # --- 4e. verify fixes (re-check what we just repaired) ---------------------
     echo
     info "== verify fixes =="
     PROBLEMS=0
@@ -348,8 +388,15 @@ PY
    看最近会话最后发生的事；tail ~/.dsh/source/web.log。
 4. 找根因 → 修复。优先复用确定性原语：
    bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh --fix
-   （relink 自愈 / bin/dsh 补位 / 未知事件 ignorable / 损坏日志修复）；
-   也可直接执行修复命令（如 ln -sfn 重建扩展链接）。
+   （relink 自愈 / 插件依赖自愈 / bin/dsh 补位 / 未知事件 ignorable / 损坏日志修复）；
+   也可直接执行修复命令。
+   若是【任何插件】导致 boot 失败（报错含 Cannot find package / failed to import
+   loader entry / plugin tree failed to load）：
+   a. 读 ~/.dsh/profiles/web/package.json 的 dependencies/bundles 定位是哪个插件；
+   b. 修其依赖（node ~/.dsh/skills/dsh-web-doctor/scripts/plugin-deps-check.mjs
+      看 FIXABLE/MISSING；MISSING 且槽里没有 → 该插件缺依赖，需重装或隔离）；
+   c. 必要时隔离该插件（dsh plugin --profile web remove <pkg>）让 web 先起来，
+      再单独修插件。
 5. 验证：curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3080/ 应为 200；
    若 web 未起，用 restart-dsh-web.sh 或 nohup dsh web 拉起。
 6. 最终输出（简洁中文）：根因一句话、做了什么、当前 web 状态；

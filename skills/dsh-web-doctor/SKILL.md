@@ -57,10 +57,24 @@ bash ~/.dsh/skills/dsh-web-doctor/scripts/doctor.sh --fix --restart  # 诊断 + 
 3. **扩展 relink**：ab-config 里每个 `extensions[].relink` 是否存在（缺失 = 未来 `dsh web`
    必挂，正是 2026-08-11 事故）。
 4. **槽可启动**：current 有 `bin/dsh` 或编译产物 `apps/cli/lib/bin.js`。
-5. **session 存储**：全量 `check-all-sessions.mjs`（92 会话示例：全过）。
+5. **session 存储（L0 文件层）**：`session-store-check.mjs` 逐日志校验可解压、header 正确、
+   尾部合法 JSON——**只用 node 标准库 + zstd CLI，不加载任何 DSH 编译包**。
 6. **web.log 尾部**：最近启动失败的直接证据。
 7. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
    （类型/seq/时间/内容提示）——"挂了之前系统在做什么"。
+
+## 依赖分层（极小依赖设计）
+
+doctor 是**最后一道防线**，它自己不能依赖"可能已经被弄坏的东西"（current 槽的编译产物、
+扩展 bundle）。分两层：
+
+| 层 | 依赖 | 覆盖 | 失败影响 |
+|---|---|---|---|
+| **L0（自包含）** | 系统工具（node 内置/zstd CLI/jq/curl/ps/lsof）+ 纯文件操作 | 布局快照、web 健康、launcher 链、relink 存在性、槽可启动、**session 文件层检查**、最近活动、relink/launcher 修复、**内置 restart 兜底** | **永不因自身依赖失败**——即使 current 槽的编译产物整个没了也能跑 |
+| **L1（深度，可降级）** | current 槽编译产物（`@deepseek-ai/dsh-session-persistence-jsonl` 等） | `check-all-sessions` 全量读取校验、`repair-unknown-events` ignorable 修复 | 加载失败 → 明确报告"deep check unavailable（current slot 可能坏了）"，L0 结论仍权威，doctor 继续 |
+
+**设计契约**：doctor 的 L0 路径**绝不 import 任何 `@deepseek-ai/*` 编译包、绝不加载扩展插件**。
+L1 只是增强，加载不了就降级——救火工具必须在自己要修的故障里也活着。
 
 ## 自愈 prompt（web 恢复后 / 给其它 agent）
 

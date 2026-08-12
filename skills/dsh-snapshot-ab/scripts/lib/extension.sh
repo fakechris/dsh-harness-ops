@@ -106,8 +106,9 @@ ext_install_skills() {
 #   ERR_MODULE_NOT_FOUND after cutover (2026-08-11 dsh-llm incident: import was
 #   added in the extension, tsconfig/vitest already listed it, ab-config.relink
 #   did not). Scan the built lib for bare specifiers and fail the prepare with a
-#   precise missing-link list. lib/client.js is excluded: the client bundle is
-#   injected by the profile pnpm closure, not the relink map.
+#   precise missing-link list. lib/client.js AND its chunk dir lib/client/ are
+#   excluded: the client bundle is injected by the profile pnpm closure, not the
+#   relink map (chunks would otherwise false-positive on client-only imports).
 ext_check_runtime_deps() {
   local ext="$1" cand="$2" repo="$3"
   local name libdir
@@ -125,7 +126,9 @@ pat2 = re.compile(r"""import\s*\(\s*['"]([^'"]+)['"]\s*\)""")
 seen = set()
 for base, _dirs, files in os.walk(root):
     for f in files:
-        if not f.endswith(".js") or f == "client.js":
+        # skip the whole client bundle (lib/client.js + lib/client/ chunks):
+        # browser code is injected by the profile pnpm closure, not relinks
+        if not f.endswith(".js") or f == "client.js" or "/client/" in base or base.endswith("/client"):
             continue
         if "/types/" in base or base.endswith("/types"):
             continue

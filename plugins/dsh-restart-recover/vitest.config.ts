@@ -11,7 +11,7 @@ const DSH = process.env.DSH_SOURCE ?? '/Users/chris/.dsh/source/current'
 export default defineConfig({
   resolve: {
     alias: [
-      { find: 'cordis', replacement: fileURLToPath(new URL(`${DSH}/vendor/cordis/lib/index.js`, import.meta.url)) },
+      { find: '@deepseek-ai/cordis', replacement: fileURLToPath(new URL(`${DSH}/vendor/cordis/lib/index.js`, import.meta.url)) },
       { find: '@deepseek-ai/dsh-agent', replacement: fileURLToPath(new URL(`${DSH}/packages/core/agent/lib/index.js`, import.meta.url)) },
       { find: '@deepseek-ai/dsh-session', replacement: fileURLToPath(new URL(`${DSH}/packages/core/session/lib/index.js`, import.meta.url)) },
     ],

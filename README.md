@@ -15,7 +15,7 @@
 >
 > 合起来回答五个问题：**web 挂了谁拉起？拉起后工作继续吗？会话看起来丢了怎么办？官方发新版本怎么安全切换？A/B 都挂了怎么一键救？**
 > 三者互补：`ab.sh switch/rollback` 杀 web → `dsh-web-guard` 拉起 → `dsh-restart-recover` 续接；
-> 全挂兜底走 `dsh-web-doctor`（终端 `doctor.sh --fix --restart`）。
+> 全挂兜底走 `dsh-web-doctor`（终端 `dsh-doctor --fix --restart`）。
 >
 > > 曾用名 `dsh-skill-snapshot-ab`（2026-08-11 更名）—— 仓库从"纯 AB 轮换 skill"长成了
 > > "skill + 插件"混合工具箱，名字不再贴切。skill 目录名 `dsh-snapshot-ab` 保持不变

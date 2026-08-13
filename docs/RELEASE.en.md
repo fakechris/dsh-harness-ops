@@ -38,7 +38,7 @@ dsh plugin --profile web add ./pkg-0.1.0.tgz        # pnpm pack tarball
 **Live verification** (this machine, 2026-08-12): `dsh plugin --profile demo add .`
 auto-initialized the profile, `pnpm link`ed the plugin, appended the bundle to
 `dsh.profile.bundles`; `dsh --profile demo --dump-config` showed the
-`# == @fakechris/dsh-restart-recover` layer. The production `web` profile already
+`# == @deepseek-ai/dsh-restart-recover` layer. The production `web` profile already
 follows this mechanism (bundles: `dsh-base / dsh-web-app / dsh-track / dsh-restart-recover`).
 
 ### 1.3 The git-install "build-script catch" (official wording)

@@ -155,7 +155,7 @@ dsh-doctor --guide          # or option 5
 | ⌫ / Delete | delete before/after the cursor |
 | PgUp/PgDn | scroll back through the full CoT |
 | Ctrl-L | clear the pane |
-| `/help` `/quit` | key help / leave |
+| `/help` `/quit` `/lang` | key help / leave / switch language (en⇄zh, default en; or set `DSH_DOCTOR_LANG=zh`) |
 
 **Rendering**: CoT/prompt/answers rendered as **markdown** (headings/bold/italic/inline
 code/fences/lists/quotes), tool calls as `[tool]` lines, a live `thinking ⠋` spinner while the

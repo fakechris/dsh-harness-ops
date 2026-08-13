@@ -171,7 +171,7 @@ dsh-doctor --quiet            # 少输出
   用户随时 **Ctrl-C 打断并输入指引**，agent 按指引继续；PgUp/PgDn 滚动回看。
 
 上下文文件 `/tmp/dsh-doctor-chat.txt` 跨轮携带（每会话重置）；`DSH_DOCTOR_AGENT_TIMEOUT`
-（默认 300s）兜底。任何修复可逆；`q`/`/quit`/空闲 Ctrl-C 退出。
+（默认 300s）兜底。界面提示**双语**（主语言在前，`DSH_DOCTOR_LANG=en|zh` 默认 en，会话内 `/lang` 切换；菜单语言切换后进 TUI 自动继承）。任何修复可逆；`q`/`/quit`/空闲 Ctrl-C 退出。
 
 ## 诊断项（doctor 查什么）
 

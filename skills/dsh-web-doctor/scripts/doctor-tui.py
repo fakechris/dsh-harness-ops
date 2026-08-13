@@ -63,6 +63,12 @@ def trunc_width(s, maxw):
         w += cw
     return "".join(out)
 
+
+# braille 8-dot spinner — "agent is alive & thinking" indicator, like the web
+# GUI's live Think row; wide-char safe (each glyph is 1 column)
+SPINNERS = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+SPIN_IDX = 0
+
 HOME = os.path.expanduser("~")
 SKILLS_DIR = os.environ.get("DSH_SKILLS_DIR", os.path.join(HOME, ".dsh", "skills"))
 DSH_SOURCE = os.environ.get("DSH_SOURCE", os.path.join(HOME, ".dsh", "source"))
@@ -244,6 +250,7 @@ class Tui:
         self.fixed = self.skipped = self.failed = 0
         self.quit = False
         self.keyhelp_shown = False
+        self.spin = 0
 
     # ---- pane -------------------------------------------------------------
     def add(self, text, style="plain"):
@@ -381,8 +388,15 @@ class Tui:
         h, w = scr.getmaxyx()
         scr.erase()
         # status bar
+        agent_tag = self.agent_state
+        if self.agent_state == "running":
+            # advance the spinner on every repaint (~100ms tick) — the pane
+            # shows CoT, but during quiet LLM gaps this keeps the "alive"
+            # indicator moving like the web GUI's Think row
+            self.spin = (self.spin + 1) % len(SPINNERS)
+            agent_tag = "thinking %s" % SPINNERS[self.spin]
         status = " doctor-tui | web:%s | phase:%s | agent:%s | %s | %s" % (
-            self.web, self.phase, self.agent_state,
+            self.web, self.phase, agent_tag,
             "current:" + self._current_slot(), self._keys_hint(),
         )
         try:

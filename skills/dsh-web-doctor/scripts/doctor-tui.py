@@ -27,13 +27,41 @@ rest of the doctor uses (zstd/curl/node). No pip packages.
 
 import curses
 import json
+import locale
 import os
 import re
 import shutil
 import subprocess
 import sys
 import time
+import unicodedata
 from collections import deque
+
+
+def display_width(s):
+    """Terminal column width: wide/fullwidth chars (CJK) take 2 columns."""
+    w = 0
+    for ch in s:
+        if unicodedata.combining(ch):
+            continue
+        if unicodedata.east_asian_width(ch) in ("W", "F"):
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def trunc_width(s, maxw):
+    """Cut s to at most maxw terminal columns, never splitting a wide char."""
+    out = []
+    w = 0
+    for ch in s:
+        cw = display_width(ch)
+        if w + cw > maxw:
+            break
+        out.append(ch)
+        w += cw
+    return "".join(out)
 
 HOME = os.path.expanduser("~")
 SKILLS_DIR = os.environ.get("DSH_SKILLS_DIR", os.path.join(HOME, ".dsh", "skills"))
@@ -199,6 +227,7 @@ class Tui:
         self.scroll = 0
         self.follow = True   # auto-follow bottom; manual scroll disables
         self.input = ""
+        self.cursor = 0      # insertion point inside self.input (char index)
         self.msg = ""
         self.phase = "diag"      # diag | fix | llm | restart | done
         self.problems = []
@@ -357,13 +386,13 @@ class Tui:
             "current:" + self._current_slot(), self._keys_hint(),
         )
         try:
-            scr.addstr(0, 0, status[: w - 1], curses.A_REVERSE)
+            scr.addstr(0, 0, trunc_width(status, w - 1), curses.A_REVERSE)
         except curses.error:
             pass
         # message line (2nd from bottom)
         if self.msg:
             try:
-                scr.addstr(h - 2, 0, " " + self.msg[: w - 2], self.attr_for("warn"))
+                scr.addstr(h - 2, 0, trunc_width(" " + self.msg, w - 2), self.attr_for("warn"))
             except curses.error:
                 pass
         # content pane
@@ -392,13 +421,14 @@ class Tui:
                         scr.addstr(top + i, x, ch, attr)
                     except curses.error:
                         pass
-                    x += 1
-        # input bar
+                    x += display_width(ch)   # wide chars (CJK) take 2 columns
+        # input bar (cursor column accounts for wide chars + insertion point)
         label = self._input_label()
         prompt = label + self.input
+        curs_col = display_width(label) + display_width(self.input[:self.cursor])
         try:
-            scr.addstr(h - 1, 0, prompt[: w - 2], self.attr_for("user"))
-            scr.move(h - 1, min(len(prompt), w - 2))
+            scr.addstr(h - 1, 0, trunc_width(prompt, w - 2), self.attr_for("user"))
+            scr.move(h - 1, min(curs_col, w - 2))
         except curses.error:
             pass
         scr.refresh()
@@ -551,27 +581,27 @@ class Tui:
         self.add("press q or Ctrl-C to exit   // 按 q 或 Ctrl-C 退出", "dim")
 
     # ---- input -------------------------------------------------------------
-    def _read_input(self):
-        """Blocking input for fix/restart prompts. Returns answer or None (quit)."""
-        while True:
-            self.draw()
-            ch = self._getch(None)
-            if ch is None:
-                continue
-            if ch == "KEY_ENTER":
-                ans = self.input
-                self.input = ""
-                return ans
-            if ch in ("KEY_QUIT", "KEY_CTRL_C"):
-                return None
-            if ch == "KEY_ESC":
-                self.input = ""
-                continue
-            if ch in ("KEY_BACKSPACE",):
-                self.input = self.input[:-1]
-                continue
-            if len(ch) == 1:
-                self.input += ch
+    def _read_esc_sequence(self):
+        """macOS ncurses delivers ESC[<X> as SEPARATE chars even with keypad on
+        (verified 2026-08-13) — combine them here so ←/→/Home/End work, and a
+        lone ESC no longer arrives as a stray char that clears the input."""
+        esc_map = {"A": "KEY_UP", "B": "KEY_DOWN", "C": "KEY_RIGHT",
+                   "D": "KEY_LEFT", "H": "KEY_HOME", "F": "KEY_END"}
+        try:
+            self.scr.timeout(60)   # short window for the rest of the sequence
+            nxt = self.scr.get_wch()
+        except curses.error:
+            return "KEY_ESC"       # lone ESC
+        if not isinstance(nxt, str) or nxt not in ("[", "O"):
+            return "KEY_ESC"
+        try:
+            self.scr.timeout(60)
+            final = self.scr.get_wch()
+        except curses.error:
+            return "KEY_ESC"
+        if isinstance(final, str) and final in esc_map:
+            return esc_map[final]
+        return "KEY_ESC"
 
     def _getch(self, timeout):
         self.scr.timeout(timeout if timeout is not None else -1)
@@ -587,7 +617,7 @@ class Tui:
             if ch == "\x03":
                 return "KEY_CTRL_C"
             if ch == "\x1b":
-                return "KEY_ESC"
+                return self._read_esc_sequence()
             if ch in ("\x7f", "\x08"):
                 return "KEY_BACKSPACE"
             if ch == "\x0c":
@@ -601,6 +631,9 @@ class Tui:
             curses.KEY_NPAGE: "KEY_NPAGE",
             curses.KEY_HOME: "KEY_HOME",
             curses.KEY_END: "KEY_END",
+            curses.KEY_LEFT: "KEY_LEFT",
+            curses.KEY_RIGHT: "KEY_RIGHT",
+            curses.KEY_DC: "KEY_DC",
             curses.KEY_BACKSPACE: "KEY_BACKSPACE",
             curses.KEY_RESIZE: "KEY_RESIZE",
         }.get(ch, "KEY_OTHER")
@@ -628,28 +661,45 @@ class Tui:
             self.follow = False
             self.scroll += 10
             return
+        # HOME/END edit the INPUT cursor (the input bar is the focus; pane
+        # scrolling is PgUp/PgDn, End-to-bottom is the default follow mode)
+        if ch == "KEY_BACKSPACE":
+            if self.cursor > 0:
+                self.input = self.input[:self.cursor - 1] + self.input[self.cursor:]
+                self.cursor -= 1
+            return
+        if ch == "KEY_DC":
+            if self.cursor < len(self.input):
+                self.input = self.input[:self.cursor] + self.input[self.cursor + 1:]
+            return
+        if ch == "KEY_LEFT":
+            if self.cursor > 0:
+                self.cursor -= 1
+            return
+        if ch == "KEY_RIGHT":
+            if self.cursor < len(self.input):
+                self.cursor += 1
+            return
         if ch == "KEY_HOME":
-            self.follow = False
-            self.scroll = 0
+            self.cursor = 0
             return
         if ch == "KEY_END":
-            self.follow = True
-            return
-        if ch == "KEY_BACKSPACE":
-            self.input = self.input[:-1]
+            self.cursor = len(self.input)
             return
         if ch == "KEY_ENTER":
             self._submit()
             return
         if ch == "KEY_ESC":
-            self.input = ""
-            return
-        if isinstance(ch, str) and len(ch) == 1:
-            self.input += ch
+            return   # lone ESC: no-op — never wipe the typed message
+        if isinstance(ch, str) and len(ch) >= 1:
+            # insert at the cursor (unicode-safe: CJK arrives as one char)
+            self.input = self.input[:self.cursor] + ch + self.input[self.cursor:]
+            self.cursor += 1
 
     def _submit(self):
         text = self.input.strip()
         self.input = ""
+        self.cursor = 0
         if not text:
             return
         if text == "/quit" or text == "/q":
@@ -665,6 +715,8 @@ class Tui:
     def _show_help(self):
         self.add("── keys ──", "heading")
         self.add("  type + Enter        send a message to the agent   // 输入后回车发送给 LLM", "plain")
+        self.add("  ←/→ Home/End        move the input cursor (edit mid-text)  // 移动输入光标", "plain")
+        self.add("  ⌫ / Delete          delete before/after the cursor", "plain")
         self.add("  Ctrl-C              interrupt a running agent (or quit when idle)", "plain")
         self.add("  PgUp/PgDn/Home/End  scroll the pane", "plain")
         self.add("  Ctrl-L              clear the pane", "plain")
@@ -730,6 +782,12 @@ class Tui:
 
 # ---------------------------------------------------------------------------
 def main(scr, problems_json=None):
+    # UTF-8 locale first — without it curses reads CJK input byte-wise and
+    # wide-char rendering misaligns (2026-08-13: Chinese input/editing broke)
+    try:
+        locale.setlocale(locale.LC_ALL, "")
+    except Exception:
+        pass
     # raw mode: Ctrl-C arrives as a character through get_wch, NOT as SIGINT
     # to the whole foreground process group — so it interrupts the agent
     # (agent.kill), not the TUI itself. cbreak (the wrapper default) keeps

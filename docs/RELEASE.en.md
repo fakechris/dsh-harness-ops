@@ -127,10 +127,10 @@ git-install requirement. Skills need no build.
 ```sh
 # 1) Changes go through PRs (squash merge, AGENTS.md L4)
 # 2) After merge: bump version + update CHANGELOG
-echo "0.3.0" > VERSION
+echo "0.3.1" > VERSION
 # 3) Tag and ship
-git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.0"
-git tag v0.3.0 && git push origin main --tags
+git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.1"
+git tag v0.3.1 && git push origin main --tags
 # 4) Consumers update
 bash scripts/update.sh
 ```

@@ -107,10 +107,10 @@ bundle 插件自带 `prepare` 脚本（`node scripts/dsh-env.mjs tsc -p tsconfig
 ```sh
 # 1) 改动走 PR（squash merge，见 AGENTS.md L4）
 # 2) merge 后 bump 版本 + 更新 CHANGELOG（单独小 PR 或随最后改动）
-echo "0.3.0" > VERSION   # 或 minor/major
+echo "0.3.1" > VERSION   # 或 minor/major
 # 3) 打 tag 发布
-git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.0"
-git tag v0.3.0 && git push origin main --tags
+git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.1"
+git tag v0.3.1 && git push origin main --tags
 # 4) 消费端更新
 bash scripts/update.sh
 ```

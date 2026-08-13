@@ -88,8 +88,8 @@ dsh-doctor --guide            # mini TUI guided mode: confirm every fix step by 
                                           //   全绿跳过；完整思维链实时展示）
   5) Exit                                 // 退出
   6) Switch language 中文                 // 切换语言
-  7) Mini TUI (guided)                   // 引导模式：逐步确认每个修复；
-                                          //   LLM 可选（只读复核/自动修复）
+  7) Mini TUI (guided)                   // full-screen: per-step fixes +
+                                          //   LLM chat (markdown CoT, interrupt anytime)
   choose [1-7]:
 ```
 
@@ -100,10 +100,14 @@ No black box.
 **Mini TUI guided mode (`--guide` / option 7, 2026-08-13 lesson)**: one unattended `--agent`
 long run once failed — derailed by a false-positive plugin-dep report, killed by its timeout,
 fixing nothing. **Lesson: long doctor tasks without a human steering them are unreliable.**
-Guided mode makes you confirm every fix (`[Y]es` apply / `[n]o` skip / `[?]` detail / `[q]`
-quit), and the LLM step is optional and supervised: 1 skip / 2 **read-only review** (a headless
-agent changes nothing, cross-checks for missed issues) / 3 review + repair (may modify files,
-Ctrl-C anytime). No unattended long run by default.
+Guided mode is a REAL full-screen TUI (python3+curses, stdlib only): status bar + scrollable
+pane + bottom input bar. It runs the deterministic diagnosis, walks each fix with
+`[Y]es/[n]o/[?]/[q]`, then opens an LLM chat: type a message + Enter to run the headless
+agent (context carried across turns), **Ctrl-C interrupts a running agent so you can steer it**,
+PgUp/PgDn/Home/End scroll, Ctrl-L clears, `/help` `/quit`. CoT, prompt and answers are
+rendered as MARKDOWN (headings / bold / inline code / code fences / lists / quotes), not raw
+text. No unattended long run by default; falls back to a step-by-step non-TTY mode when no
+terminal.
 
 **Layered design (why)**:
 - **Deterministic layer** (option 2): sensors + actuators — seconds, zero LLM cost, runs even

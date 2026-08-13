@@ -31,7 +31,7 @@ dsh plugin --profile web add ./pkg-0.1.0.tgz        # pnpm pack 的 tarball
 
 **实测验证**（本机 2026-08-12）：`dsh plugin --profile demo add .` 自动初始化 profile、
 `pnpm link` 插件、把 bundle 追加进 `dsh.profile.bundles`；`dsh --profile demo --dump-config`
-显示 `# == @deepseek-ai/dsh-restart-recover` 层。生产 `web` profile 已按此机制管理
+显示 `# == @fakechris/dsh-restart-recover` 层。生产 `web` profile 已按此机制管理
 （bundles: `dsh-base / dsh-web-app / dsh-track / dsh-restart-recover`）。
 
 ### 1.3 git 直装的"构建脚本陷阱"（官方原文 "the build-script catch"）
@@ -115,7 +115,7 @@ git tag v0.2.1 && git push origin main --tags
 bash scripts/update.sh
 ```
 
-**发布 = git push + tag。没有 npm publish、没有打包步骤。**
+**发布 = git push + tag**（仓库本身即分发单元）；bundle 包（`plugins/dsh-restart-recover`）另可发 npm（见 §三 2026-08-13 更新）。
 
 ### 2.4 安装
 
@@ -129,7 +129,19 @@ bash skills/dsh-web-guard/scripts/install.sh   # 可选：自愈守护
 
 ## 三、以后要进 npm 吗？
 
-### 结论：现阶段**不进**，bundle 部分预留了随时可进的能力。
+### 结论（2026-08-13 更新）：bundle 包已迁 `@fakechris` scope、可发 npm；skills 仍是目录机制。
+
+> 更新：用户拥有 `@fakechris` / `@turnkeyai` 两个 npm scope。`plugins/dsh-restart-recover`
+> 已改名为 `@fakechris/dsh-restart-recover` + `publishConfig.access=public`，`npm pack`
+> 验证通过（lib + cordis.patch.yml），发布命令：
+> ```sh
+> cd plugins/dsh-restart-recover && npm publish --registry=https://registry.npmjs.org
+> ```
+> 消费端：`dsh plugin --profile web add @fakechris/dsh-restart-recover`（npm 预构建，无需
+> allowBuilds）。skills（dsh-snapshot-ab / dsh-web-guard / dsh-session-recovery / dsh-web-doctor）
+> 仍是 `~/.dsh/skills/` 目录机制，不进 npm，走 `bash scripts/install.sh`。
+
+历史理由（保留）：
 
 理由：
 

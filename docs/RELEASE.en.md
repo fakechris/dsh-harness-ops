@@ -38,7 +38,7 @@ dsh plugin --profile web add ./pkg-0.1.0.tgz        # pnpm pack tarball
 **Live verification** (this machine, 2026-08-12): `dsh plugin --profile demo add .`
 auto-initialized the profile, `pnpm link`ed the plugin, appended the bundle to
 `dsh.profile.bundles`; `dsh --profile demo --dump-config` showed the
-`# == @deepseek-ai/dsh-restart-recover` layer. The production `web` profile already
+`# == @fakechris/dsh-restart-recover` layer. The production `web` profile already
 follows this mechanism (bundles: `dsh-base / dsh-web-app / dsh-track / dsh-restart-recover`).
 
 ### 1.3 The git-install "build-script catch" (official wording)
@@ -135,7 +135,10 @@ git tag v0.2.1 && git push origin main --tags
 bash scripts/update.sh
 ```
 
-**Release = git push + tag. No npm publish, no packaging step.**
+**Release = git push + tag** (the repo is the distribution unit); the bundle
+(`plugins/dsh-restart-recover`) can additionally publish to npm (see §3, updated
+2026-08-13: moved to the `@fakechris` scope with `publishConfig.access=public`;
+`npm publish --registry=https://registry.npmjs.org` from that directory).
 
 ### 2.4 Install
 

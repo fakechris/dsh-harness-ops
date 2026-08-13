@@ -2,8 +2,8 @@
 #
 # Install into a profile with:
 #   dsh plugin --profile web add github:dsh-external/dsh-restart-recover
-# (or: add "@deepseek-ai/dsh-restart-recover" to the profile's dsh.profile.bundles)
+# (or: add "@fakechris/dsh-restart-recover" to the profile's dsh.profile.bundles)
 
 - insert:
     - id: restart-recover
-      name: '@deepseek-ai/dsh-restart-recover'
+      name: '@fakechris/dsh-restart-recover'

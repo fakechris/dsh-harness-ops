@@ -39,7 +39,7 @@ if [ -d "$PLUGIN" ]; then
     # (which forwards to pnpm in the profile dir) register the bundle layer.
     ( cd "$PLUGIN" && pnpm install --frozen-lockfile >/dev/null 2>&1 || pnpm install >/dev/null 2>&1 )
     if ( cd "$PLUGIN" && dsh plugin --profile web add . ) >/tmp/dsh-harness-ops-plugin.log 2>&1; then
-      echo "  bundle -> web profile: @deepseek-ai/dsh-restart-recover"
+      echo "  bundle -> web profile: @fakechris/dsh-restart-recover"
     else
       echo "  warn: 'dsh plugin --profile web add .' failed (see /tmp/dsh-harness-ops-plugin.log)"
       echo "        if the bundle is already linked, this is fine; check with: dsh plugin --profile web ls"

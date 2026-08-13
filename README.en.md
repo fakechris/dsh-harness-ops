@@ -86,10 +86,10 @@ dsh-doctor --guide            # mini TUI guided mode: confirm every fix step by 
                                           //   插件配置被改乱）
   4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，不因诊断
                                           //   全绿跳过；完整思维链实时展示）
-  5) Exit                                 // 退出
+  5) Mini TUI (guided)                   // full-screen: auto-fix + LLM chat
+                                          //   (watch full CoT, interrupt anytime)
   6) Switch language 中文                 // 切换语言
-  7) Mini TUI (guided)                   // full-screen: per-step fixes +
-                                          //   LLM chat (markdown CoT, interrupt anytime)
+  7) Exit                                 // 退出
   choose [1-7]:
 ```
 
@@ -97,7 +97,7 @@ During deep LLM check/repair, `[llm]` streams the **full reasoning chain** — h
 (full CoT text), which command it decided to run (tool + complete command), and the results.
 No black box.
 
-**Mini TUI guided mode (`--guide` / option 7, 2026-08-13 lesson)**: one unattended `--agent`
+**Mini TUI guided mode (`--guide` / option 5, 2026-08-13 lesson)**: one unattended `--agent`
 long run once failed — derailed by a false-positive plugin-dep report, killed by its timeout,
 fixing nothing. **Lesson: long doctor tasks without a human steering them are unreliable.**
 Guided mode is a REAL full-screen TUI (python3+curses, stdlib only). The deterministic
@@ -119,9 +119,9 @@ scroll, `/help` `/quit`. Falls back to a step-by-step non-TTY mode when no termi
   incompatibility, a plugin that scrambled its config, new failure modes); headless does NOT
   load the web's extension bundles, so extension faults don't stop it; option 4 forces the deep
   check even when the diagnosis is green
-- **Guided mode** (option 7): the human-in-the-loop entry for deterministic + LLM — fixes are
-  confirmed one by one, the LLM reviews read-only or repairs under supervision; for when you do
-  not trust unattended long runs
+- **Guided mode** (option 5): the human-in-the-loop entry for deterministic + LLM — the LLM
+  decides and fixes autonomously, you watch the full CoT and interrupt with guidance; for when
+  you do not trust unattended long runs
 
 **9 diagnosis checks**: web health / launcher chain / extension relinks / slot bootability /
 session file-layer (per-log validation) / web.log (classified: historical vs current fault) /

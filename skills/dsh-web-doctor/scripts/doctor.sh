@@ -988,10 +988,10 @@ doctor_menu() {
       echo "                        //   推理根因，发现/修复任意插件问题"
       echo "  4) LLM 深度检测和修复 // Deep LLM check & repair (always runs,"
       echo "                        //   不因全绿跳过)   even when diagnosis is green)"
-      echo "  5) 退出               // Exit"
+      echo "  5) mini TUI 引导模式 // Guided: 全屏交互终端——自动修复 + LLM"
+      echo "                        //   对话（看完整 CoT，随时 Ctrl-C 打断指引）"
       echo "  6) 切换语言 English   // Switch language"
-      echo "  7) mini TUI 引导模式 // Guided mode: 你逐步确认每个修复，"
-      echo "                        //   LLM 可选（只读复核/自动修复）"
+      echo "  7) 退出               // Exit"
       printf "  选择 [1-7]: "
     else
       echo "  1) Quick check (diagnose only)          // 快速体检（只读）"
@@ -1002,10 +1002,10 @@ doctor_menu() {
       echo "                                          //   推理根因，发现/修复任意插件问题"
       echo "  4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，"
       echo "                                          //   不因诊断全绿而跳过）"
-      echo "  5) Exit                                 // 退出"
+      echo "  5) Mini TUI (guided)                   // 全屏交互终端：自动修复 + LLM"
+      echo "                                          //   对话（看完整 CoT，随时打断指引）"
       echo "  6) Switch language 中文                 // 切换语言"
-      echo "  7) Mini TUI (guided)                   // 引导模式：逐步确认每个修复；"
-      echo "                                          //   LLM 可选（只读复核/自动修复）"
+      echo "  7) Exit                                 // 退出"
       printf "  choose [1-7]: "
     fi
     read -r choice || exit 0
@@ -1015,11 +1015,11 @@ doctor_menu() {
       2) FLAG_FIX=1; FLAG_RESTART=1; FLAG_AGENT=0; FLAG_FORCE=0; FLAG_GUIDE=0; doctor_run ;;
       3) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=0; FLAG_GUIDE=0; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
       4) ( FLAG_FIX=0; FLAG_RESTART=0; FLAG_AGENT=1; FLAG_FORCE=1; FLAG_GUIDE=0; exec > >(tee "$REPORT") 2>&1; doctor_run ) ;;
-      5) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
+      5) FLAG_GUIDE=1; run_guided ;;
       6) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
          [ "$LANG_CODE" = "zh" ] && echo "  已切换到中文（DSH_DOCTOR_LANG=zh 固定）" || echo "  switched to English (set DSH_DOCTOR_LANG=zh for default Chinese)"
          continue ;;
-      7) FLAG_GUIDE=1; run_guided ;;
+      7) [ "$LANG_CODE" = "zh" ] && echo "再见" || echo "bye"; exit 0 ;;
       *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-7" || echo "  invalid choice, enter 1-7"; continue ;;
     esac
     echo
@@ -1027,39 +1027,6 @@ doctor_menu() {
     read -r _ || true
   done
 }
-
-# --- entry point ---------------------------------------------------------------
-# No flags + interactive terminal → menu (the user-first path).
-if [ "$FLAG_FIX" = "0" ] && [ "$FLAG_RESTART" = "0" ] && [ "$FLAG_AGENT" = "0" ] && [ "$FLAG_GUIDE" = "0" ] && [ -t 0 ]; then
-  doctor_menu
-  exit 0
-fi
-
-# --diag-json: machine-readable diagnosis for the TUI (web + problem list).
-if [ "${FLAG_DIAG_JSON:-0}" = "1" ]; then
-  doctor_diagnose >/dev/null 2>&1
-  { printf 'WEB=%s\n' "$code"; printf '%s\n' "${PROBLEM_LIST[@]:-}"; } | python3 -c '
-import json, sys
-lines = sys.stdin.read().splitlines()
-web, probs = "000", []
-for ln in lines:
-    if ln.startswith("WEB="):
-        web = ln[4:]
-    elif "|" in ln:
-        i, h = ln.split("|", 1)
-        probs.append({"id": i, "hint": h})
-print(json.dumps({"web": web, "count": len(probs), "problems": probs}))
-'
-  exit 0
-fi
-
-# --fix-item <kind>: run ONE fix primitive (used by the TUI; also handy for
-# scripts). doctor_diagnose first so CURRENT etc. are set.
-if [ -n "${FLAG_FIX_ITEM:-}" ]; then
-  doctor_diagnose >/dev/null 2>&1
-  guided_fix "$FLAG_FIX_ITEM"
-  exit $?
-fi
 
 # --guide: real mini TUI (curses, full-screen, interruptible chat with the
 # LLM, markdown rendering) when a terminal + python3+curses are available;
@@ -1098,6 +1065,40 @@ json.dump({"web": web, "count": len(probs), "problems": probs}, open(sys.argv[1]
   fi
   doctor_guided
 }
+
+# --- entry point ---------------------------------------------------------------
+# No flags + interactive terminal → menu (the user-first path).
+if [ "$FLAG_FIX" = "0" ] && [ "$FLAG_RESTART" = "0" ] && [ "$FLAG_AGENT" = "0" ] && [ "$FLAG_GUIDE" = "0" ] && [ -t 0 ]; then
+  doctor_menu
+  exit 0
+fi
+
+# --diag-json: machine-readable diagnosis for the TUI (web + problem list).
+if [ "${FLAG_DIAG_JSON:-0}" = "1" ]; then
+  doctor_diagnose >/dev/null 2>&1
+  { printf 'WEB=%s\n' "$code"; printf '%s\n' "${PROBLEM_LIST[@]:-}"; } | python3 -c '
+import json, sys
+lines = sys.stdin.read().splitlines()
+web, probs = "000", []
+for ln in lines:
+    if ln.startswith("WEB="):
+        web = ln[4:]
+    elif "|" in ln:
+        i, h = ln.split("|", 1)
+        probs.append({"id": i, "hint": h})
+print(json.dumps({"web": web, "count": len(probs), "problems": probs}))
+'
+  exit 0
+fi
+
+# --fix-item <kind>: run ONE fix primitive (used by the TUI; also handy for
+# scripts). doctor_diagnose first so CURRENT etc. are set.
+if [ -n "${FLAG_FIX_ITEM:-}" ]; then
+  doctor_diagnose >/dev/null 2>&1
+  guided_fix "$FLAG_FIX_ITEM"
+  exit $?
+fi
+
 
 if [ "$FLAG_GUIDE" = "1" ]; then
   run_guided

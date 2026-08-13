@@ -9,6 +9,14 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+- `fix(web-doctor)`: menu order — Exit is ALWAYS the last option (7), Mini TUI
+  moved to 5 and Switch language to 6; Mini TUI menu copy updated to the
+  current autonomous model (was stale "per-step confirmation" wording). Also
+  fixed a latent bug: run_guided was defined AFTER the entry-point dispatch,
+  so choosing Mini TUI from the menu failed with "command not found" (the
+  --guide flag path worked, the menu path did not).
+
+
 - `feat(web-doctor)`: TUI finish verdict — when the LLM agent finishes, the
   TUI never leaves the user guessing at a bare input prompt: 0 problems + web
   up → "✅ 验收通过：web 正常、无残留问题" + a 5s auto-exit countdown (any key

@@ -33,7 +33,7 @@ skills 的脚本，**不依赖任何 web 进程**。
 教训（2026-08-13）：`--agent` 有一次**无人值守跑满 300s 超时**——被一个误报的插件依赖
 （子路径导入被当成 MISSING）和一个误导性的 "deep check unavailable（槽可能坏了）" 提示带偏，
 什么都没修成。结论：**没有人 guide 的 doctor 长任务不靠谱** → 新增 **mini TUI 引导模式**
-（`--guide` / 菜单 7），LLM 自动判断修复、用户看 CoT 随时打断；同时修掉那两个误导源
+（`--guide` / 菜单 5），LLM 自动判断修复、用户看 CoT 随时打断；同时修掉那两个误导源
 （plugin-deps-check 按 exports map 解析子路径、deep-check 失败显示真实报错而不是断言槽坏了）。
 
 ## 何时用
@@ -72,19 +72,19 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
                                           //   推理根因，发现/修复任意插件问题
   4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，
                                           //   不因诊断全绿而跳过）
-  5) Exit                                 // 退出
+  5) Mini TUI (guided)                   // 全屏交互终端：自动修复 + LLM
+                                          //   对话（看完整 CoT，随时打断指引）
   6) Switch language 中文                 // 切换语言
-  7) Mini TUI (guided)                   // 全屏交互终端：逐步修复 +
-                                          //   LLM 对话（markdown 渲染，随时打断）
+  7) Exit                                 // 退出
   choose [1-7]:
 ```
 
 - 不确定选什么 → **选 3**（大模型自动修复，推荐——能发现/修复任意插件问题）
 - 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 2**（机械修复配置问题）
-- **不放心无人长跑 / 上次 --agent 被带偏过** → **选 7**（mini TUI：全屏交互，随时打断和 LLM 对话）
+- **不放心无人长跑 / 上次 --agent 被带偏过** → **选 5**（mini TUI：全屏交互，随时打断和 LLM 对话）
 - **要 LLM 深度检测和修复**（不因诊断全绿跳过，LLM 独立交叉验证每一项）→ **选 4**，或命令行 `dsh-doctor --agent --force`
 - 诊断全绿时 `--fix` 会**跳过修复**（"no problems — skipping repair"），不做无意义操作；`--agent` 同理，除非 `--force`
-- 菜单每次跑完回到菜单，按 `5` 退出
+- 菜单每次跑完回到菜单，按 `7` 退出（Exit 永远在最后）
 
 ## LLM 配置修复（检查什么 / 处理什么 / 工作流）
 
@@ -144,7 +144,7 @@ dsh-doctor --quiet            # 少输出
 **为什么不能只有 LLM**：web 挂时 agent 起不来（headless 也依赖 harness 本身）；让 LLM 逐个扫
 所有 session 太慢太贵；修复需要不变的操作原语。**确定性传感器 + LLM 大脑是正解。**
 
-### mini TUI 引导模式（`--guide` / 菜单 7，2026-08-13 教训）
+### mini TUI 引导模式（`--guide` / 菜单 5，2026-08-13 教训）
 
 **背景**：0813 一次 `--agent` 无人值守长跑失败——被误报带偏、超时杀进程、什么都没修成。
 **原则**：**没有人 guide 的 doctor 长任务不靠谱** → 默认不做无人长跑。

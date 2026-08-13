@@ -62,7 +62,7 @@ REC="$SKILLS_DIR/dsh-session-recovery/scripts"
 PORT="${DSH_WEB_PORT:-3080}"
 REPORT="${DSH_DOCTOR_REPORT:-/tmp/dsh-doctor-report.txt}"
 
-FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0; FLAG_FORCE=0; FLAG_GUIDE=0
+FLAG_FIX=0; FLAG_RESTART=0; FLAG_QUIET=0; FLAG_AGENT=0; FLAG_FORCE=0; FLAG_GUIDE=0; FLAG_DIAG_JSON=0; FLAG_FIX_ITEM=
 while [ $# -gt 0 ]; do
   case "$1" in
     --force) FLAG_FORCE=1; shift ;;
@@ -72,13 +72,17 @@ dsh web Doctor — 一键救火（web 挂了 / 起不来时用）
 
 用法（不用记，直接跑 dsh-doctor 就有交互菜单）：
   dsh-doctor                    交互菜单（推荐）
-  dsh-doctor --guide            mini TUI 引导模式：逐步确认每个修复
-                                （人机协同；LLM 可选，绝不无人长跑）
+  dsh-doctor --guide            mini TUI（全屏交互终端）：诊断 → 逐步修复 →
+                                LLM 对话（markdown 渲染 CoT，随时打断/引导）
   dsh-doctor --agent            LLM 智能自愈（诊断+找根因+修复+拉起 web）
   dsh-doctor --agent --force     强制 LLM 验收（即使诊断全绿也跑 LLM 交叉验证）
   dsh-doctor --fix --restart    确定性修复 + 拉起 web（不依赖 LLM）
   dsh-doctor --fix              只确定性修复
   dsh-doctor --quiet            少输出
+
+内部子命令（TUI 驱动用，勿手敲）：
+  dsh-doctor --diag-json        诊断结果 JSON（web/problems）
+  dsh-doctor --fix-item <kind>  只跑单个修复原语（web/launcher/relink/boot/session/pdep/llm）
 
 入口（二选一，都行）：
   dsh-doctor                    # PATH 命令（~/.local/bin/dsh-doctor，与 dsh 同目录）
@@ -89,6 +93,8 @@ HELP
     --restart) FLAG_RESTART=1; shift ;;
     --agent) FLAG_AGENT=1; shift ;;
     --guide|--tui) FLAG_GUIDE=1; shift ;;
+    --diag-json) FLAG_DIAG_JSON=1; shift ;;
+    --fix-item) FLAG_FIX_ITEM="${2:-}"; shift 2 ;;
     --quiet) FLAG_QUIET=1; shift ;;
     *) echo "unknown arg: $1 (try: dsh-doctor --help)" >&2; exit 2 ;;
   esac
@@ -1012,7 +1018,7 @@ doctor_menu() {
       6) [ "$LANG_CODE" = "zh" ] && LANG_CODE=en || LANG_CODE=zh
          [ "$LANG_CODE" = "zh" ] && echo "  已切换到中文（DSH_DOCTOR_LANG=zh 固定）" || echo "  switched to English (set DSH_DOCTOR_LANG=zh for default Chinese)"
          continue ;;
-      7) FLAG_GUIDE=1; doctor_guided ;;
+      7) FLAG_GUIDE=1; run_guided ;;
       *) [ "$LANG_CODE" = "zh" ] && echo "  无效选择，请输入 1-7" || echo "  invalid choice, enter 1-7"; continue ;;
     esac
     echo
@@ -1028,9 +1034,46 @@ if [ "$FLAG_FIX" = "0" ] && [ "$FLAG_RESTART" = "0" ] && [ "$FLAG_AGENT" = "0" ]
   exit 0
 fi
 
-# --guide: mini TUI — human-guided, step-by-step.
-if [ "$FLAG_GUIDE" = "1" ]; then
+# --diag-json: machine-readable diagnosis for the TUI (web + problem list).
+if [ "${FLAG_DIAG_JSON:-0}" = "1" ]; then
+  doctor_diagnose >/dev/null 2>&1
+  { printf 'WEB=%s\n' "$code"; printf '%s\n' "${PROBLEM_LIST[@]:-}"; } | python3 -c '
+import json, sys
+lines = sys.stdin.read().splitlines()
+web, probs = "000", []
+for ln in lines:
+    if ln.startswith("WEB="):
+        web = ln[4:]
+    elif "|" in ln:
+        i, h = ln.split("|", 1)
+        probs.append({"id": i, "hint": h})
+print(json.dumps({"web": web, "count": len(probs), "problems": probs}))
+'
+  exit 0
+fi
+
+# --fix-item <kind>: run ONE fix primitive (used by the TUI; also handy for
+# scripts). doctor_diagnose first so CURRENT etc. are set.
+if [ -n "${FLAG_FIX_ITEM:-}" ]; then
+  doctor_diagnose >/dev/null 2>&1
+  guided_fix "$FLAG_FIX_ITEM"
+  exit $?
+fi
+
+# --guide: real mini TUI (curses, full-screen, interruptible chat with the
+# LLM, markdown rendering) when a terminal + python3+curses are available;
+# otherwise fall back to the step-by-step non-TTY guided mode.
+run_guided() {
+  if [ -t 0 ] && command -v python3 >/dev/null 2>&1 \
+     && python3 -c 'import curses' >/dev/null 2>&1; then
+    python3 "$SKILLS_DIR/dsh-web-doctor/scripts/doctor-tui.py"
+    return $?
+  fi
   doctor_guided
+}
+
+if [ "$FLAG_GUIDE" = "1" ]; then
+  run_guided
   exit $?
 fi
 

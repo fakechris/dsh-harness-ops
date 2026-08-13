@@ -9,6 +9,16 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+- `fix(web-doctor)`: TUI i18n + input editing — Chinese (CJK) input & editing
+  works: UTF-8 locale set before curses (get_wch returned CJK byte-wise
+  before), wide-char column math (display_width/trunc_width) so CJK renders
+  and cursor/cutoff never misalign, manual ESC-sequence parsing (macOS ncurses
+  delivers `ESC[D` as separate chars even with keypad on — arrows were read as
+  ESC and the old handler WIPED the input), input cursor editing (←/→/Home/
+  End move, ⌫/Delete delete at cursor, insert at cursor), and lone ESC is a
+  no-op instead of clearing the message.
+
+
 - `feat(web-doctor)`: mini TUI guided mode (`dsh-doctor --guide` / menu 7) — a
   REAL full-screen interactive TUI (python3+curses, stdlib only). The
   deterministic diagnosis STREAMS into the plain terminal first (no black

@@ -7,56 +7,47 @@ Versioning: [SemVer](https://semver.org/). Distribution unit is the GitHub
 repository (no npm registry publish required — see `docs/RELEASE.md`).
 Each entry links its squash-merged PR.
 
-## [Unreleased]
+## [0.3.0] — 2026-08-13
 
-- `fix(web-doctor)`: menu order — Exit is ALWAYS the last option (7), Mini TUI
-  moved to 5 and Switch language to 6; Mini TUI menu copy updated to the
-  current autonomous model (was stale "per-step confirmation" wording). Also
-  fixed a latent bug: run_guided was defined AFTER the entry-point dispatch,
-  so choosing Mini TUI from the menu failed with "command not found" (the
-  --guide flag path worked, the menu path did not).
+**mini TUI for dsh-web-doctor** — a real full-screen interactive terminal UI
+(human-in-the-loop self-healing), plus the UX/i18n hardening that made it
+usable. 7 PRs since v0.2.1.
 
+### mini TUI（`dsh-doctor --guide` / 菜单 5）
 
-- `feat(web-doctor)`: TUI finish verdict — when the LLM agent finishes, the
-  TUI never leaves the user guessing at a bare input prompt: 0 problems + web
-  up → "✅ 验收通过：web 正常、无残留问题" + a 5s auto-exit countdown (any key
-  cancels and lets you keep chatting); problems remain → "⚠ N 个问题未解决" +
-  explicit "keep chatting or q to quit". Agent-done state also shows a live
-  'thinking' spinner in the status bar (web-GUI-style alive indicator).
-
-
-- `fix(web-doctor)`: TUI i18n + input editing — Chinese (CJK) input & editing
-  works: UTF-8 locale set before curses (get_wch returned CJK byte-wise
-  before), wide-char column math (display_width/trunc_width) so CJK renders
-  and cursor/cutoff never misalign, manual ESC-sequence parsing (macOS ncurses
-  delivers `ESC[D` as separate chars even with keypad on — arrows were read as
-  ESC and the old handler WIPED the input), input cursor editing (←/→/Home/
-  End move, ⌫/Delete delete at cursor, insert at cursor), and lone ESC is a
-  no-op instead of clearing the message.
-
-
-- `feat(web-doctor)`: mini TUI guided mode (`dsh-doctor --guide` / menu 7) — a
-  REAL full-screen interactive TUI (python3+curses, stdlib only). The
-  deterministic diagnosis STREAMS into the plain terminal first (no black
-  screen), then the TUI takes over: status bar + scrollable markdown-rendered
-  pane + bottom input bar. **The LLM decides and fixes autonomously**: known
-  issues auto-fixed deterministically (no per-item confirmation), 0 problems →
-  read-only auto-acceptance ("✅ accepted" + evidence), leftovers → the LLM
-  diagnoses & fixes on its own; it only asks the user when it truly cannot
-  decide. The interaction is for WATCHING the full CoT (markdown rendering:
-  headings/bold/inline code/fences/lists/quotes) and **Ctrl-C to interrupt &
-  steer** the agent mid-run (context carried across turns). Falls back to a
-  step-by-step non-TTY mode when no terminal. Lesson from 2026-08-13: an
-  unattended `--agent` run once burned its whole timeout on noise, fixing
-  nothing — no unattended long run by default.
-- `fix(web-doctor)`: `plugin-deps-check` resolves subpath imports via the
-  package's exports map (e.g. `@deepseek-ai/dsh-client-runtime/client` was
-  falsely reported MISSING — a misleading signal that derailed the LLM agent).
-- `fix(web-doctor)`: deep-check failure now shows the actual error and is
-  labelled environment noise, not "current slot may be broken"; `--agent` runs
-  get a Ctrl-C trap that kills the agent, and the self-heal prompt carries a
-  "no rabbit holes" discipline; diagnose-only exit code now 1 when problems are
-  found (matching the documented contract).
+- `feat(web-doctor)`: full-screen interactive TUI (python3+curses, stdlib
+  only) — status bar + scrollable markdown-rendered pane + bottom input bar.
+  Diagnosis STREAMS into the plain terminal first (no black screen), then the
+  TUI takes over. ([#46](https://github.com/dsh-external/dsh-harness-ops/pull/46))
+- `feat(web-doctor)`: autonomous model — the LLM decides and fixes on its own:
+  known issues deterministically auto-fixed, 0 problems → read-only
+  auto-acceptance ("✅ 验收通过" + evidence), leftovers → the LLM diagnoses &
+  fixes; it only asks the user when it truly cannot decide. The interaction is
+  for WATCHING the full CoT (markdown) and Ctrl-C to interrupt & steer.
+  ([#47](https://github.com/dsh-external/dsh-harness-ops/pull/47))
+- `fix(web-doctor)`: TUI i18n + input editing — UTF-8 locale, wide-char column
+  math (CJK renders/cursor/cutoff correct), manual ESC-sequence parsing
+  (macOS ncurses splits `ESC[D`; arrows no longer wipe the input), in-line
+  cursor editing (←/→/Home/End, ⌫/Delete, insert-at-cursor).
+  ([#48](https://github.com/dsh-external/dsh-harness-ops/pull/48))
+- `feat(web-doctor)`: live `thinking ⠋` spinner in the status bar while the
+  agent runs (web-GUI-style alive indicator). ([#49](https://github.com/dsh-external/dsh-harness-ops/pull/49))
+- `feat(web-doctor)`: finish verdict — all green → "✅ 验收通过" + 5s auto-exit
+  countdown (any key cancels); problems remain → explicit "keep chatting or
+  quit". Never leaves the user at a bare input prompt.
+  ([#50](https://github.com/dsh-external/dsh-harness-ops/pull/50))
+- `fix(web-doctor)`: menu order — Exit is ALWAYS last (7), Mini TUI → 5,
+  Switch language → 6; fixed a latent bug where choosing Mini TUI from the
+  menu failed with "run_guided: command not found" (definition order).
+  ([#51](https://github.com/dsh-external/dsh-harness-ops/pull/51))
+- `fix(web-doctor)`: plugin-deps-check resolves subpath imports via the
+  package exports map (e.g. `@deepseek-ai/dsh-client-runtime/client` was
+  falsely reported MISSING — a misleading signal that derailed the LLM agent);
+  deep-check failure now shows the actual error, diagnose-only exit code 1,
+  Ctrl-C kills the agent, self-heal prompt carries a "no rabbit holes"
+  discipline. ([#45](https://github.com/dsh-external/dsh-harness-ops/pull/45))
+- `docs`: README (bilingual) — full mini-TUI design & usage section; stale
+  references fixed (4 skills, current version 0.3.0).
 
 ## [0.2.1] — 2026-08-12
 

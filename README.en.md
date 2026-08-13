@@ -42,7 +42,7 @@ dsh-harness-ops (this repo)
 ├── skills/dsh-session-recovery/   session-loss diagnosis: 0 sessions/corrupted logs → locate → lossless repair → restart
 │   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
 ├── skills/dsh-web-doctor/        out-of-band doctor: diagnose → fix → relaunch from the terminal when web/A/B are all down
-│   └── scripts/                   doctor.sh / session-last-activity.mjs
+│   └── scripts/                   doctor.sh / doctor-tui.py / session-last-activity.mjs
 └── plugins/dsh-restart-recover/   restart-continuation plugin: detects interrupted on agent/created → auto-injects continuation
     └── src/index.ts               cordis plugin (listens agent/created, zero dsh-track dependency)
 ```
@@ -97,18 +97,70 @@ During deep LLM check/repair, `[llm]` streams the **full reasoning chain** — h
 (full CoT text), which command it decided to run (tool + complete command), and the results.
 No black box.
 
-**Mini TUI guided mode (`--guide` / option 5, 2026-08-13 lesson)**: one unattended `--agent`
-long run once failed — derailed by a false-positive plugin-dep report, killed by its timeout,
-fixing nothing. **Lesson: long doctor tasks without a human steering them are unreliable.**
-Guided mode is a REAL full-screen TUI (python3+curses, stdlib only). The deterministic
-diagnosis first STREAMS into the plain terminal (no black screen), then the TUI takes over:
-status bar + scrollable markdown-rendered pane + bottom input bar. **The LLM decides and
-fixes autonomously** — known issues are deterministically auto-fixed (no per-item
-confirmation), 0 problems → read-only auto-acceptance ("✅ accepted" + evidence), leftovers →
-the LLM diagnoses & fixes on its own; it only asks the user when it truly cannot decide.
-The point of the interaction is to WATCH the full CoT (markdown: headings/bold/inline
-code/fences/lists/quotes) and **Ctrl-C to interrupt & steer** the agent mid-run. PgUp/PgDn
-scroll, `/help` `/quit`. Falls back to a step-by-step non-TTY mode when no terminal.
+### Mini TUI: design & usage (`dsh-doctor --guide` / option 5)
+
+**Why a TUI** (2026-08-13 lesson): one unattended `--agent` long run once failed — derailed by
+a false-positive plugin-dep report, killed by its timeout, fixing nothing. **Long doctor tasks
+without a human steering them are unreliable.** The mini TUI is "watched self-healing": the
+LLM works autonomously while you watch it think, and interrupt when something looks wrong.
+
+**Three design principles**:
+
+1. **The LLM decides and fixes autonomously** — known issues are deterministically auto-fixed
+   (no per-item confirmation); 0 problems → read-only auto-acceptance ("✅ accepted" + evidence);
+   leftovers → the LLM diagnoses the root cause and fixes on its own.
+2. **The interaction exists to WATCH the full CoT and interrupt with guidance** — the complete
+   reasoning chain streams in markdown; **Ctrl-C interrupts a running agent**, type guidance +
+   Enter and it continues (context carried across turns).
+3. **The agent only asks the user when it truly cannot decide** (missing API key, an uncertain
+   destructive action) — it never dumps a decision on you otherwise. All green → explicit
+   verdict + 5s auto-exit.
+
+**Layout** (python3+curses, zero third-party deps; falls back to a step-by-step non-TTY mode
+when no terminal):
+
+```
+┌ doctor-tui | web:200 | phase:llm | agent:thinking ⠋ | current:slot-b | PgUp/Dn=scroll ┐
+│ ── auto-run: LLM self-heal/acceptance (CoT live) ──                                     │
+│ Let me understand the task: 1. I am the dsh web out-of-band agent … (CoT markdown)      │
+│ [tool] skill {"name":"dsh-web-doctor"}                                                  │
+│ **Healthy.** web (:3080 returns 200), all extension relinks fine … (answer markdown)    │
+│ ✅ accepted: web up, no leftover problems — nothing to do                               │
+│ ✅ all green — auto-exit in 5s (any key to cancel)                                       │
+└ you → agent (Enter=send ^C=interrupt /help) > _                                        ┘
+```
+
+**Flow**:
+
+```sh
+dsh-doctor --guide          # or option 5
+```
+
+1. **Diagnosis** streams into the plain terminal first (visible line by line, never a black
+   screen)
+2. In the TUI: known issues are **deterministically auto-fixed** (relinks/plugin deps/launcher/
+   sessions — reversible, backed up)
+3. **The LLM runs automatically**: 0 problems → read-only cross-check → "✅ accepted";
+   leftovers → diagnoses & fixes on its own
+4. **Finish**: all green → 5s countdown auto-exit (any key cancels, keep chatting); problems
+   remain → explicit "keep chatting or quit"
+
+**Keys**:
+
+| Key | Action |
+|---|---|
+| type + Enter | send a message/guidance to the LLM (interrupts a running agent first) |
+| Ctrl-C | interrupt a running agent (or quit when idle) |
+| ←/→ Home/End | move the input cursor (mid-text editing, CJK-safe) |
+| ⌫ / Delete | delete before/after the cursor |
+| PgUp/PgDn | scroll back through the full CoT |
+| Ctrl-L | clear the pane |
+| `/help` `/quit` | key help / leave |
+
+**Rendering**: CoT/prompt/answers rendered as **markdown** (headings/bold/italic/inline
+code/fences/lists/quotes), tool calls as `[tool]` lines, a live `thinking ⠋` spinner while the
+agent runs. **Chinese (CJK) input & editing fully supported** (UTF-8 locale, wide-char column
+math, in-line cursor editing).
 
 **Layered design (why)**:
 - **Deterministic layer** (option 2): sensors + actuators — seconds, zero LLM cost, runs even
@@ -165,7 +217,7 @@ Convention: `$AB` below means `~/.dsh/skills/dsh-snapshot-ab/scripts/ab.sh` (pre
 ## 1. Install
 
 ```sh
-# One command: 3 skills into ~/.dsh/skills + the dsh-restart-recover bundle
+# One command: 4 skills into ~/.dsh/skills + the dsh-restart-recover bundle
 # into the web profile
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 cd dsh-harness-ops

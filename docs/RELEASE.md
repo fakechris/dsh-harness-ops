@@ -83,7 +83,7 @@ npm registry 现状：`@deepseek-ai/*` scope 在 npm 上**无任何包**（`npm 
 
 ### 2.1 回答"每次更新要重新打包吗？"
 
-**不需要手工打包。** 本仓库是**混合仓库**（3 个 skill + 1 个 bundle 插件），各走各的机制：
+**不需要手工打包。** 本仓库是**混合仓库**（4 个 skill + 1 个 bundle 插件），各走各的机制：
 
 | 组件 | 类型 | 分发/安装机制 | 更新动作 |
 |---|---|---|---|
@@ -97,8 +97,8 @@ bundle 插件自带 `prepare` 脚本（`node scripts/dsh-env.mjs tsc -p tsconfig
 
 ### 2.2 版本号管理
 
-- 根目录 `VERSION` 文件（SemVer，当前 `0.2.0`）
-- git tag：`vX.Y.Z`（`v0.2.0`），每个发布打一个
+- 根目录 `VERSION` 文件（SemVer，当前 `0.3.0`）
+- git tag：`vX.Y.Z`（`v0.3.0`），每个发布打一个
 - `CHANGELOG.md`：每个版本一节，链接 squash-merged PR
 - 规则：`fix:` → patch；`feat:` → minor；破坏性 → major（bump 时机：合并后、tag 前）
 
@@ -107,10 +107,10 @@ bundle 插件自带 `prepare` 脚本（`node scripts/dsh-env.mjs tsc -p tsconfig
 ```sh
 # 1) 改动走 PR（squash merge，见 AGENTS.md L4）
 # 2) merge 后 bump 版本 + 更新 CHANGELOG（单独小 PR 或随最后改动）
-echo "0.2.1" > VERSION   # 或 minor/major
+echo "0.3.0" > VERSION   # 或 minor/major
 # 3) 打 tag 发布
-git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.2.1"
-git tag v0.2.1 && git push origin main --tags
+git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.0"
+git tag v0.3.0 && git push origin main --tags
 # 4) 消费端更新
 bash scripts/update.sh
 ```
@@ -161,7 +161,7 @@ bash skills/dsh-web-guard/scripts/install.sh   # 可选：自愈守护
 - **官方开放私有库给 org**（未来主流分发据官方决策笔记是私有 npm 库
   `npx -p @deepseek-ai/dsh@0.0.1-rc.1 dsh web`）——届时跟随官方通道；
 - **公开分发** bundle 给 org 外用户（git 安装要用户 `allowBuilds`，npm 预构建免这一步）；
-- 需要 **semver range 依赖解析**（profile 里写 `^0.2.0` 而不是 pin commit）；
+- 需要 **semver range 依赖解析**（profile 里写 `^0.3.0` 而不是 pin commit）；
 - 需要 **pnpm pack tarball** 给离线环境。
 
 届时只 publish `plugins/dsh-restart-recover`（去掉 `private: true`、`pnpm publish` 前构建 lib/），

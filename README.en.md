@@ -68,14 +68,15 @@ tools (node/zstd/jq/curl/ps/lsof), **no web process, no extension bundle loaded*
 **How to use** (user-first, no flags to remember):
 
 ```sh
-dsh-doctor                    # interactive menu (English default; option 5 switches to Chinese)
+dsh-doctor                    # interactive menu (English default; option 6 switches to Chinese)
+dsh-doctor --guide            # mini TUI guided mode: confirm every fix step by step
 ```
 
 ```
-==============================================================
+=============================================================
   dsh web Doctor — one-shot rescue        // dsh web 医生 — 一键救火
   web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
-==============================================================
+=============================================================
   1) Quick check (diagnose only)          // 快速体检（只读）
   2) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：relink/
      incl. relaunch web                  //   插件依赖/launcher/session/LLM 凭据等
@@ -87,11 +88,22 @@ dsh-doctor                    # interactive menu (English default; option 5 swit
                                           //   全绿跳过；完整思维链实时展示）
   5) Exit                                 // 退出
   6) Switch language 中文                 // 切换语言
+  7) Mini TUI (guided)                   // 引导模式：逐步确认每个修复；
+                                          //   LLM 可选（只读复核/自动修复）
+  choose [1-7]:
 ```
 
 During deep LLM check/repair, `[llm]` streams the **full reasoning chain** — how it thinks
 (full CoT text), which command it decided to run (tool + complete command), and the results.
 No black box.
+
+**Mini TUI guided mode (`--guide` / option 7, 2026-08-13 lesson)**: one unattended `--agent`
+long run once failed — derailed by a false-positive plugin-dep report, killed by its timeout,
+fixing nothing. **Lesson: long doctor tasks without a human steering them are unreliable.**
+Guided mode makes you confirm every fix (`[Y]es` apply / `[n]o` skip / `[?]` detail / `[q]`
+quit), and the LLM step is optional and supervised: 1 skip / 2 **read-only review** (a headless
+agent changes nothing, cross-checks for missed issues) / 3 review + repair (may modify files,
+Ctrl-C anytime). No unattended long run by default.
 
 **Layered design (why)**:
 - **Deterministic layer** (option 2): sensors + actuators — seconds, zero LLM cost, runs even
@@ -102,10 +114,14 @@ No black box.
   incompatibility, a plugin that scrambled its config, new failure modes); headless does NOT
   load the web's extension bundles, so extension faults don't stop it; option 4 forces the deep
   check even when the diagnosis is green
+- **Guided mode** (option 7): the human-in-the-loop entry for deterministic + LLM — fixes are
+  confirmed one by one, the LLM reviews read-only or repairs under supervision; for when you do
+  not trust unattended long runs
 
 **9 diagnosis checks**: web health / launcher chain / extension relinks / slot bootability /
-session file-layer (97 logs) / web.log (classified: historical vs current fault) / profile
-bundle deps (any plugin) / LLM config (.env key) / last activity in recent sessions.
+session file-layer (per-log validation) / web.log (classified: historical vs current fault) /
+profile bundle deps (any plugin; subpaths resolved via exports map) / LLM config (.env key) /
+last activity in recent sessions.
 
 ---
 

@@ -52,6 +52,42 @@ function walk(dir, out = []) {
   return out
 }
 
+/**
+ * Split an import spec into its base package + optional subpath.
+ *   '@deepseek-ai/dsh-x/client'  -> { base: '@deepseek-ai/dsh-x', sub: 'client' }
+ *   'cordis'                     -> { base: 'cordis', sub: '' }
+ * Subpath imports resolve through the base package (its exports map / files),
+ * NOT through a separate node_modules/<full-spec> entry — the naive
+ * existsSync(node_modules/<full-spec>) check below used to flag healthy
+ * packages as MISSING (e.g. @deepseek-ai/dsh-client-runtime/client, which the
+ * package itself exports; that false positive derailed the doctor's LLM agent).
+ */
+function splitSpec(spec) {
+  const parts = spec.split('/')
+  if (spec.startsWith('@')) {
+    return { base: parts.slice(0, 2).join('/'), sub: parts.slice(2).join('/') }
+  }
+  return { base: parts[0], sub: parts.slice(1).join('/') }
+}
+
+/** Does the base package resolve `sub`? exports map first, then file/dir. */
+function subpathResolves(baseDir, sub) {
+  if (!sub) return true
+  try {
+    const pj = JSON.parse(readFileSync(join(baseDir, 'package.json'), 'utf8'))
+    const ex = pj.exports
+    if (ex && typeof ex === 'object' && !Array.isArray(ex)) {
+      const key = './' + sub
+      if (key in ex) return true
+      // wildcard exports ("./src/*"): the import starts with the prefix
+      for (const k of Object.keys(ex)) {
+        if (k.endsWith('*') && key.startsWith(k.slice(0, -1)) && key.length > k.length - 1) return true
+      }
+    }
+  } catch { /* unreadable package.json — fall through to direct check */ }
+  return existsSync(join(baseDir, sub))
+}
+
 /** Find a package dir under slot/packages whose package.json name matches. */
 function findSlotPackage(spec) {
   const pkgs = join(SLOT, 'packages')
@@ -101,10 +137,15 @@ for (const [depName, spec] of Object.entries(pkg.dependencies ?? {})) {
     for (const m of text.matchAll(IMPORT_RE)) imports.add(m[1])
   }
   for (const spec2 of [...imports].sort()) {
-    if (existsSync(join(repo, 'node_modules', spec2))) {
+    const { base, sub } = splitSpec(spec2)
+    const baseDir = join(repo, 'node_modules', base)
+    if (existsSync(baseDir) && subpathResolves(baseDir, sub)) {
       console.log(`ok:      ${spec2} (${depName})`)
     } else {
-      const src = findSlotPackage(spec2)
+      // missing (base absent, or subpath not resolvable): try to find a fix
+      // source for the BASE package — the link must point at the whole package
+      // dir, never at a node_modules/<pkg>/<subpath> pseudo-entry.
+      const src = findSlotPackage(base)
       if (src) {
         console.log(`FIXABLE: ${spec2} (${depName}) repo=${repo} -> ${src}`)
       } else {

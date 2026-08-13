@@ -7,6 +7,22 @@ Versioning: [SemVer](https://semver.org/). Distribution unit is the GitHub
 repository (no npm registry publish required — see `docs/RELEASE.md`).
 Each entry links its squash-merged PR.
 
+## [Unreleased]
+
+- `feat(web-doctor)`: mini TUI guided mode (`dsh-doctor --guide` / menu 7) —
+  human-in-the-loop: every fix confirmed step by step (`[Y]es/[n]o/[?]/[q]`),
+  optional LLM step (skip / read-only review / supervised repair, Ctrl-C
+  anytime). Lesson from 2026-08-13: an unattended `--agent` run once burned its
+  whole timeout on noise, fixing nothing — no unattended long run by default.
+- `fix(web-doctor)`: `plugin-deps-check` resolves subpath imports via the
+  package's exports map (e.g. `@deepseek-ai/dsh-client-runtime/client` was
+  falsely reported MISSING — a misleading signal that derailed the LLM agent).
+- `fix(web-doctor)`: deep-check failure now shows the actual error and is
+  labelled environment noise, not "current slot may be broken"; `--agent` runs
+  get a Ctrl-C trap that kills the agent, and the self-heal prompt carries a
+  "no rabbit holes" discipline; diagnose-only exit code now 1 when problems are
+  found (matching the documented contract).
+
 ## [0.2.1] — 2026-08-12
 
 Final-release compatibility + web-doctor productization (26 commits since v0.2.0).

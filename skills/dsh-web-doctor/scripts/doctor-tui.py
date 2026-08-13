@@ -64,6 +64,20 @@ def run_capture(args, **kw):
         return 127, "(cannot run: %s)" % e
 
 
+def stream_lines(args, on_line, timeout_total=300):
+    """Run args and call on_line(text) for each line as it arrives, so a long
+    deterministic pass is VISIBLE progressively (no black screen)."""
+    try:
+        p = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                             text=True, stdin=subprocess.DEVNULL)
+        for raw in p.stdout:
+            on_line(strip_ansi(raw))
+        return p.wait()
+    except Exception as e:
+        on_line("(cannot stream: %s)\n" % e)
+        return 127
+
+
 def web_code():
     try:
         p = subprocess.run(
@@ -163,7 +177,8 @@ class Md:
 # the TUI
 # ---------------------------------------------------------------------------
 class Tui:
-    def __init__(self, scr):
+    def __init__(self, scr, problems_json=None):
+        self.problems_json = problems_json
         self.scr = scr
         curses.start_color()
         curses.use_default_colors()
@@ -398,17 +413,13 @@ class Tui:
             return "?"
 
     def _keys_hint(self):
-        if self.phase == "fix":
-            return "y/n/?/q"
         if self.phase == "llm":
-            return "type=msg Enter=send ^C=interrupt/quit PgUp/Dn=scroll"
+            return "type=steer Enter=send ^C=interrupt/quit PgUp/Dn=scroll"
         return "PgUp/Dn=scroll ^L=clear ^C=quit"
 
     def _input_label(self):
-        if self.phase == "fix":
-            return "fix %d/%d (y=apply n=skip ?=detail q=quit) > " % (self.fix_idx + 1, len(self.problems))
         if self.phase == "llm":
-            return "you → agent > "
+            return "you → agent (Enter=send ^C=interrupt /help) > "
         if self.phase == "restart":
             return "web still down — restart now? (y/n) > "
         return "> "
@@ -417,9 +428,29 @@ class Tui:
     def phase_diag(self):
         self.phase = "diag"
         self.add("── dsh web doctor — interactive TUI ──", "heading")
-        self.add("diagnosing (read-only)…   // 正在体检（只读）", "dim")
-        rc, out = run_capture(["bash", DOCTOR], timeout=180)
-        self.add_md(out)
+        if self.problems_json:
+            # run_guided already streamed the diagnosis into the terminal and
+            # handed us the structured result — never re-run, never black-screen
+            try:
+                with open(self.problems_json, "r", encoding="utf-8") as f:
+                    info = json.load(f)
+                self.problems = info.get("problems", [])
+                self.web = info.get("web", "000")
+            except Exception:
+                self.problems = []
+                self.web = web_code()
+            self.add("deterministic diagnosis ran above in the terminal — %d problem(s) found" % len(self.problems),
+                     "dim" if not self.problems else "warn")
+            return
+        # direct invocation without run_guided: stream the diagnosis INTO the
+        # pane line by line so it is never a frozen wait
+        self.add("diagnosing (streaming)…   // 正在体检（流式）", "dim")
+
+        def on_line(line):
+            self.add_md(line)
+            self.draw()   # repaint so the line is VISIBLE as it streams in
+
+        stream_lines(["bash", DOCTOR], on_line)
         rc2, js = run_capture(["bash", DOCTOR, "--diag-json"], timeout=180)
         try:
             info = json.loads(js)
@@ -428,53 +459,57 @@ class Tui:
         except Exception:
             self.problems = []
             self.web = web_code()
-        self.msg = "diagnosis done — %d problem(s); fixing one by one   // 体检完成：%d 个问题，逐个修复" % (
-            len(self.problems), len(self.problems))
 
-    def phase_fix(self):
+    def phase_autofix(self):
+        """Deterministic known issues are FIXED AUTOMATICALLY — no per-item
+        confirmation. The user does not decide each fix; they watch the LLM's
+        CoT and interrupt only when something looks wrong. If the deterministic
+        pass cannot resolve something, the LLM phase takes over."""
         if not self.problems:
+            self.add("✅ 0 问题 — 无需确定性修复   // no problems — nothing to fix", "ok")
             return
-        self.phase = "fix"
-        self.fix_idx = 0
-        while self.fix_idx < len(self.problems):
-            self.draw()
-            pr = self.problems[self.fix_idx]
-            self.add("")
-            self.add("[%d/%d] %s" % (self.fix_idx + 1, len(self.problems), pr["hint"]), "warn")
-            ans = self._read_input()
-            if ans is None:  # quit
-                return
-            if ans in ("y", "Y", ""):
-                self.add("→ running fix…", "dim")
-                rc, out = run_capture(["bash", DOCTOR, "--fix-item", pr["id"]], timeout=180)
-                self.add_md(out)
-                if rc == 0:
-                    self.fixed += 1
-                else:
-                    self.failed += 1
-            elif ans in ("n", "N"):
-                self.add("→ skipped", "dim")
-                self.skipped += 1
-            elif ans in ("?", "h", "H"):
-                self.add("detail: %s" % pr["hint"], "llm")
-                continue
-            else:
-                self.add("→ quit fixing (applied fixes stay applied)", "dim")
-                return
-            self.fix_idx += 1
-        self.msg = "fixes done — fixed %d / skipped %d / failed %d" % (self.fixed, self.skipped, self.failed)
+        self.phase = "autofix"
+        self.add("")
+        self.add("── deterministic auto-fix ──", "heading")
+        self.add("%d 个已知问题 — 自动修复中（可逆、带备份；你随后在 LLM 阶段监督 CoT）" % len(self.problems), "dim")
+
+        def on_line(line):
+            self.add_md(line)
+            self.draw()   # repaint so the fix output streams visibly
+
+        rc = stream_lines(["bash", DOCTOR, "--fix"], on_line)
+        # re-verify after the deterministic pass
+        rc2, js = run_capture(["bash", DOCTOR, "--diag-json"], timeout=180)
+        try:
+            info = json.loads(js)
+            self.problems = info.get("problems", [])
+            self.web = info.get("web", "000")
+        except Exception:
+            pass
+        if not self.problems:
+            self.add("✅ 确定性修复完成：全部解决   // deterministic fix complete", "ok")
+        else:
+            self.add("%d 个问题残留 — 交给 LLM 自动诊断修复" % len(self.problems), "warn")
 
     def phase_llm(self):
+        """The LLM runs AUTONOMOUSLY (0 problems → read-only acceptance check;
+        problems left → diagnose & fix). The user's job is to WATCH the CoT and
+        interrupt with guidance when something looks wrong — not to approve each
+        step. The agent only asks the user when it genuinely cannot decide."""
         self.phase = "llm"
         self.agent_state = "idle"
         self._reset_ctx("# dsh doctor self-heal — interactive context\n")
-        self._write_ctx("## deterministic pass (already done)\n%s problems: %s\n" % (
+        self._write_ctx("## deterministic pass (done)\n%s problems remaining: %s\n" % (
             len(self.problems), "; ".join(p["hint"] for p in self.problems)))
         self.add("")
         self.add("── LLM session ──", "heading")
-        self.add("The deterministic pass is done. The LLM agent below works on this context:", "dim")
-        self.add("type a message and Enter to run it; Ctrl-C interrupts a running agent so you can steer;", "dim")
-        self.add("PgUp/PgDn scroll, /help lists keys, /quit leaves.   // 随时输入引导 LLM；Ctrl-C 打断；PgUp/PgDn 滚动", "dim")
+        if not self.problems:
+            self.add("✅ 体检 0 问题 / web %s — LLM 自动交叉验证中…" % ("正常" if self.web == "200" else "未起(HTTP %s)" % self.web), "ok")
+        else:
+            self.add("%d 个问题残留 — LLM 自动诊断修复中…" % len(self.problems), "warn")
+        self.add("你随时可以：Ctrl-C 打断并输入指引 / 直接输入消息回车（会先打断）→ 引导 LLM", "dim")
+        self.add("PgUp/PgDn 滚动看完整 CoT · /help · /quit", "dim")
+        self._auto_start()
         while not self.quit:
             self.web = web_code() if time.time() - self.last_web > 2 else self.web
             self.poll_agent()
@@ -484,28 +519,35 @@ class Tui:
                 self._handle(ch)
         self.msg = "leaving LLM session"
 
+    def _auto_start(self):
+        if self.agent_state == "running":
+            return
+        self.add("")
+        self.add("── 自动运行：LLM 自愈/验收（CoT 实时渲染）──", "user")
+        self.msg = "agent 自动运行中 — Ctrl-C 可打断并输入指引   // auto-running — Ctrl-C to interrupt & steer"
+        self.start_agent(self._build_task(""))
+
     def phase_restart(self):
         self.web = web_code()
         if self.web == "200":
             return
         self.phase = "restart"
         self.add("")
-        self.add("web is still DOWN (HTTP %s) — restart it now?" % self.web, "err")
-        ans = self._read_input()
-        if ans in ("y", "Y", ""):
-            self.add("→ relaunching web…", "dim")
-            rc, out = run_capture(["bash", DOCTOR, "--fix-item", "web"], timeout=300)
-            self.add_md(out)
-        else:
-            self.add("→ skipped relaunch (run later: dsh-doctor --fix --restart)", "dim")
+        self.add("web 仍未起（HTTP %s）— 自动重启中…（重启是 doctor 的本职，可逆）" % self.web, "err")
+        self.add("→ relaunching web…", "dim")
+        rc, out = run_capture(["bash", DOCTOR, "--fix-item", "web"], timeout=300)
+        self.add_md(out)
 
     def phase_summary(self):
         self.phase = "done"
         self.web = web_code()
         self.add("")
         self.add("── summary ──", "heading")
-        self.add("fixed %d / skipped %d / failed %d; web now: %s" % (
-            self.fixed, self.skipped, self.failed, "✅ up" if self.web == "200" else "❌ down"), "ok" if self.web == "200" else "err")
+        if not self.problems:
+            self.add("✅ 无残留问题；web now: %s" % ("✅ up" if self.web == "200" else "❌ down"), "ok" if self.web == "200" else "err")
+        else:
+            self.add("%d 问题未解决；web now: %s" % (len(self.problems), "✅ up" if self.web == "200" else "❌ down"), "err")
+            self.add("提示：可重新运行 dsh-doctor --guide 或 --agent 继续；或 /help 后继续对话", "dim")
         self.add("press q or Ctrl-C to exit   // 按 q 或 Ctrl-C 退出", "dim")
 
     # ---- input -------------------------------------------------------------
@@ -642,15 +684,30 @@ class Tui:
         # context file = full conversation so far; the agent sees it all
         with open(CHAT_CTX, "r", encoding="utf-8") as f:
             ctx = f.read()
+        n_problems = len(self.problems)
+        if n_problems == 0:
+            mode = ("你面对的是“全绿”体检：0 问题、web 正常。你的任务是**只读独立交叉验证**"
+                    "（curl 3080 / launcher 链 / 扩展 relink / ~/.dsh/.env 的 key / web.log），"
+                    "确认健康后输出“✅ 验收通过”＋你验证过的证据清单；发现报告漏掉的问题再报。"
+                    "不要修改任何文件、不重启任何进程。")
+        else:
+            mode = ("体检还剩 %d 个问题（见 context）。你的任务是**自动诊断根因并修复**："
+                    "优先复用确定性原语（bash doctor.sh --fix / --fix-item <kind>），每步验证；"
+                    "修完后验证 web 200。**只有当你无法判断/需要用户决策时才停下来问**"
+                    "（例如缺 API key、不确定某个删除/改动）。" % n_problems)
+        if user_msg:
+            user_part = "\n\n--- 用户此刻的指引（打断消息）---\n" + user_msg
+        else:
+            user_part = "\n\n（暂无用户输入——按上述模式自主运行；用户在 TUI 里看你的完整 CoT，可能随时打断）"
         task = (
-            "You are the dsh web out-of-band self-heal agent, now running as an "
-            "INTERACTIVE session steered by the user. The deterministic doctor pass "
-            "already ran. Follow the context below. Answer concisely in Chinese. "
-            "Discipline: environment noise (deep-check load failures, historical "
-            "web.log residue) is NOT proof the slot is broken; verify before acting; "
-            "if 3-4 steps make no progress, stop and report what you know, the likely "
-            "root cause, and what you need from the user.\n\n--- context ---\n%s\n"
-            "\n--- user says now ---\n%s" % (ctx[-8000:], user_msg)
+            "你是 dsh web 的 out-of-band 自愈/验收 agent，处于用户监督的交互会话（TUI）中。"
+            "确定性体检已完成（结果见 context）。" + mode +
+            "\n纪律（0813 教训，必须遵守）：确定性报告里的某些 \"unavailable / 失败\" 可能是环境性噪音"
+            "（deep check 的 compiled reader 加载失败、web.log 历史残留）——**不是槽坏了的证据**，先看具体报错再下结论；"
+            "连续 3-4 步没有进展就停止深挖，输出：已查证的事实、最可能的根因、卡点、需要用户决策什么。"
+            "用户在看你的完整 CoT；用户随时会打断并输入指引，按指引调整方向。"
+            "回答用简洁中文。"
+            "\n\n--- context ---\n%s%s" % (ctx[-8000:], user_part)
         )
         return task
 
@@ -672,16 +729,16 @@ class Tui:
 
 
 # ---------------------------------------------------------------------------
-def main(scr):
+def main(scr, problems_json=None):
     # raw mode: Ctrl-C arrives as a character through get_wch, NOT as SIGINT
     # to the whole foreground process group — so it interrupts the agent
     # (agent.kill), not the TUI itself. cbreak (the wrapper default) keeps
     # ISIG on and a stray SIGINT can kill the TUI mid-draw.
     curses.raw()
-    tui = Tui(scr)
+    tui = Tui(scr, problems_json=problems_json)
     try:
         tui.phase_diag()
-        tui.phase_fix()
+        tui.phase_autofix()
         if not tui.quit:
             tui.phase_llm()
         if not tui.quit:
@@ -732,4 +789,9 @@ if __name__ == "__main__":
     if "--selftest" in sys.argv:
         selftest()
         sys.exit(0)
-    curses.wrapper(main)
+    problems_json = None
+    if "--problems-json" in sys.argv:
+        i = sys.argv.index("--problems-json")
+        if i + 1 < len(sys.argv):
+            problems_json = sys.argv[i + 1]
+    curses.wrapper(main, problems_json)

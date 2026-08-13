@@ -19,14 +19,14 @@
  *
  * Pairs with the dsh-web-guard skill: the guard auto-relaunches the web
  * process (launchd/systemd), this plugin continues the interrupted turn.
- * @module @fakechris/dsh-restart-recover
+ * @module @deepseek-ai/dsh-restart-recover
  */
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
-export const name = '@fakechris/dsh-restart-recover'
+export const name = '@deepseek-ai/dsh-restart-recover'
 
 /** Plugin configuration. */
 export interface Config {
@@ -89,7 +89,7 @@ export function apply(ctx: Context, config?: Config): void {
         id: `resume-${Math.random().toString(36).slice(2, 10)}`,
         role: 'user' as const,
         content: [{ type: 'text' as const, text: CONTINUE_MESSAGE }],
-        source: { kind: 'plugin' as const, plugin: '@fakechris/dsh-restart-recover' },
+        source: { kind: 'plugin' as const, plugin: '@deepseek-ai/dsh-restart-recover' },
       }
       agent.followup(msg as never)
       // The follow-up is durable in the session log via the agent loop.

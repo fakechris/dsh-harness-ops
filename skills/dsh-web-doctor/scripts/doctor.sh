@@ -1060,6 +1060,9 @@ json.dump({"web": web, "count": len(probs), "problems": probs}, open(sys.argv[1]
 ' "$json_file"
     echo
     info "diagnosis done — starting the interactive TUI   // 体检完成——进入交互 TUI"
+    # the TUI inherits the CURRENT menu language (the menu may have toggled
+    # LANG_CODE without changing the DSH_DOCTOR_LANG env var)
+    export DSH_DOCTOR_LANG="${LANG_CODE:-en}"
     python3 "$SKILLS_DIR/dsh-web-doctor/scripts/doctor-tui.py" --problems-json "$json_file"
     return $?
   fi

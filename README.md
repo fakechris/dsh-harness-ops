@@ -149,7 +149,7 @@ dsh-doctor --guide          # 或菜单 5
 | ⌫ / Delete | 删除光标前/后 |
 | PgUp/PgDn | 滚动回看完整 CoT |
 | Ctrl-L | 清屏 |
-| `/help` `/quit` | 按键帮助 / 退出 |
+| `/help` `/quit` `/lang` | 按键帮助 / 退出 / 切换语言（en⇄zh，默认 en，也可 `DSH_DOCTOR_LANG=zh`） |
 
 **渲染**：CoT/prompt/终答按 **markdown** 渲染（标题/粗体/斜体/行内代码/代码块/列表/引用），
 工具调用显示为 `[tool]` 行；agent 运行时状态栏有 `thinking ⠋` 动态指示。**中文（CJK）

@@ -7,6 +7,14 @@ Versioning: [SemVer](https://semver.org/). Distribution unit is the GitHub
 repository (no npm registry publish required — see `docs/RELEASE.md`).
 Each entry links its squash-merged PR.
 
+## [Unreleased]
+
+- `feat(web-doctor)`: the TUI UI is now fully bilingual — every prompt/message/
+  verdict shows the primary language plus the other as a `//` note
+  (`DSH_DOCTOR_LANG=en|zh`, default en; `/lang` toggles in-session; the menu
+  language is inherited on entry). Status bar, titles and the input label
+  switch language; `/help` is bilingual.
+
 ## [0.3.0] — 2026-08-13
 
 **mini TUI for dsh-web-doctor** — a real full-screen interactive terminal UI

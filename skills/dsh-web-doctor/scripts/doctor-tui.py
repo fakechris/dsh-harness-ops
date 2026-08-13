@@ -214,6 +214,10 @@ class Tui:
     def __init__(self, scr, problems_json=None):
         self.problems_json = problems_json
         self.scr = scr
+        # UI language: DSH_DOCTOR_LANG (en default, zh available); /lang toggles
+        self.lang = os.environ.get("DSH_DOCTOR_LANG", "en")
+        if self.lang not in ("en", "zh"):
+            self.lang = "en"
         curses.start_color()
         curses.use_default_colors()
         self.colors = {}
@@ -252,6 +256,16 @@ class Tui:
         self.keyhelp_shown = False
         self.spin = 0
         self.auto_quit = 0.0   # deadline for auto-exit after a green acceptance; 0 = off
+
+    def bi(self, zh, en):
+        """Bilingual prompt: primary language first, the other as a // note."""
+        if self.lang == "zh":
+            return "%s   // %s" % (zh, en)
+        return "%s   // %s" % (en, zh)
+
+    def T(self, zh, en):
+        """Single-line title/status text in the primary language only."""
+        return zh if self.lang == "zh" else en
 
     # ---- pane -------------------------------------------------------------
     def add(self, text, style="plain"):
@@ -307,7 +321,7 @@ class Tui:
                 pass
             self.agent = None
         self.agent_state = "interrupted"
-        self.msg = "interrupted — type a message / guidance and press Enter to continue   // 已打断——输入引导后回车继续"
+        self.msg = self.bi("已打断——输入引导后回车继续   // interrupted — type guidance and Enter", "interrupted — type guidance and press Enter to continue   // 已打断——输入引导后回车继续")
 
     def poll_agent(self):
         if not self.agent:
@@ -350,20 +364,22 @@ class Tui:
             # explicit finish verdict — never leave the user guessing what to do
             if not self.problems and self.web == "200":
                 self.add("")
-                self.add("✅ 验收通过：web 正常、无残留问题 — 无需任何操作", "ok")
-                self.add("5 秒后自动退出；按任意键或继续输入可取消   // auto-exit in 5s; any key to cancel", "dim")
+                self.add(self.bi("✅ 验收通过：web 正常、无残留问题 — 无需任何操作", "✅ accepted: web up, no leftover problems — nothing to do"), "ok")
+                self.add(self.bi("5 秒后自动退出；按任意键或继续输入可取消", "auto-exit in 5s; any key to cancel"), "dim")
                 self.auto_quit = time.time() + 5
-                self.msg = "✅ 无问题 — %d 秒后自动退出（按任意键取消）   // all green — auto-exit in %ds" % (5, 5)
+                self.msg = self.bi("✅ 无问题 — %d 秒后自动退出（按任意键取消）" % 5, "✅ all green — auto-exit in %ds" % 5)
             else:
                 self.add("")
-                self.add("⚠ agent 完成，但仍有 %d 个问题未解决（web %s）" % (
-                    len(self.problems), "正常" if self.web == "200" else "未起"), "err")
-                self.add("继续输入让 LLM 处理，或 q / Ctrl-C 退出   // keep chatting or quit", "dim")
-                self.msg = "agent 完成 — 还有 %d 个问题；继续输入或 q 退出   // %d problem(s) left; chat on or quit" % (
-                    len(self.problems), len(self.problems))
+                self.add(self.bi(
+                    "⚠ agent 完成，但仍有 %d 个问题未解决（web %s）" % (len(self.problems), "正常" if self.web == "200" else "未起"),
+                    "⚠ agent done, but %d problem(s) remain (web %s)" % (len(self.problems), "up" if self.web == "200" else "down")), "err")
+                self.add(self.bi("继续输入让 LLM 处理，或 q / Ctrl-C 退出", "keep chatting or quit (q / Ctrl-C)"), "dim")
+                self.msg = self.bi(
+                    "agent 完成 — 还有 %d 个问题；继续输入或 q 退出" % len(self.problems),
+                    "agent done — %d problem(s) left; chat on or quit" % len(self.problems))
         elif time.time() - self.agent_start > AGENT_TIMEOUT:
             self.interrupt_agent()
-            self.msg = "agent timed out (%ss) — interrupted; type guidance to retry   // 超时已打断；可输入引导重试" % AGENT_TIMEOUT
+            self.msg = self.bi("超时已打断（%ss）— 输入引导重试" % AGENT_TIMEOUT, "agent timed out (%ss) — interrupted; type guidance to retry" % AGENT_TIMEOUT)
 
     def _parse_session_line(self, ln):
         try:
@@ -401,18 +417,27 @@ class Tui:
         scr = self.scr
         h, w = scr.getmaxyx()
         scr.erase()
-        # status bar
+        # status bar (primary-language labels; compact — the msg line carries
+        # the bilingual detail)
         agent_tag = self.agent_state
         if self.agent_state == "running":
             # advance the spinner on every repaint (~100ms tick) — the pane
             # shows CoT, but during quiet LLM gaps this keeps the "alive"
             # indicator moving like the web GUI's Think row
             self.spin = (self.spin + 1) % len(SPINNERS)
-            agent_tag = "thinking %s" % SPINNERS[self.spin]
-        status = " doctor-tui | web:%s | phase:%s | agent:%s | %s | %s" % (
-            self.web, self.phase, agent_tag,
-            "current:" + self._current_slot(), self._keys_hint(),
-        )
+            agent_tag = ("思考中 %s" % SPINNERS[self.spin]) if self.lang == "zh" else ("thinking %s" % SPINNERS[self.spin])
+        if self.lang == "zh":
+            phases = {"diag": "体检", "autofix": "自动修复", "llm": "LLM", "restart": "重启", "done": "完成"}
+            states = {"idle": "空闲", "running": "运行", "interrupted": "已打断", "done": "完成"}
+            status = " doctor-tui | web:%s | 阶段:%s | agent:%s | 槽:%s | %s" % (
+                self.web, phases.get(self.phase, self.phase), states.get(self.agent_state, agent_tag),
+                self._current_slot(), self._keys_hint(),
+            )
+        else:
+            status = " doctor-tui | web:%s | phase:%s | agent:%s | current:%s | %s" % (
+                self.web, self.phase, agent_tag,
+                self._current_slot(), self._keys_hint(),
+            )
         try:
             scr.addstr(0, 0, trunc_width(status, w - 1), curses.A_REVERSE)
         except curses.error:
@@ -471,15 +496,21 @@ class Tui:
             return "?"
 
     def _keys_hint(self):
+        if self.lang == "zh":
+            if self.phase == "llm":
+                return "输入=指引 回车=发送 ^C=打断/退出 PgUp/Dn=滚动"
+            return "PgUp/Dn=滚动 ^L=清屏 ^C=退出"
         if self.phase == "llm":
             return "type=steer Enter=send ^C=interrupt/quit PgUp/Dn=scroll"
         return "PgUp/Dn=scroll ^L=clear ^C=quit"
 
     def _input_label(self):
         if self.phase == "llm":
+            if self.lang == "zh":
+                return "你 → agent（回车=发送 ^C=打断 /help）> "
             return "you → agent (Enter=send ^C=interrupt /help) > "
         if self.phase == "restart":
-            return "web still down — restart now? (y/n) > "
+            return self.bi("web 仍未起 — 现在重启？(y/n) > ", "web still down — restart now? (y/n) > ")
         return "> "
 
     # ---- phases ------------------------------------------------------------
@@ -497,12 +528,14 @@ class Tui:
             except Exception:
                 self.problems = []
                 self.web = web_code()
-            self.add("deterministic diagnosis ran above in the terminal — %d problem(s) found" % len(self.problems),
-                     "dim" if not self.problems else "warn")
+            self.add(self.bi(
+                "确定性诊断已在上方终端输出 — 发现 %d 个问题" % len(self.problems),
+                "deterministic diagnosis ran above in the terminal — %d problem(s) found" % len(self.problems)),
+                "dim" if not self.problems else "warn")
             return
         # direct invocation without run_guided: stream the diagnosis INTO the
         # pane line by line so it is never a frozen wait
-        self.add("diagnosing (streaming)…   // 正在体检（流式）", "dim")
+        self.add(self.bi("正在体检（流式）…", "diagnosing (streaming)…"), "dim")
 
         def on_line(line):
             self.add_md(line)
@@ -524,12 +557,14 @@ class Tui:
         CoT and interrupt only when something looks wrong. If the deterministic
         pass cannot resolve something, the LLM phase takes over."""
         if not self.problems:
-            self.add("✅ 0 问题 — 无需确定性修复   // no problems — nothing to fix", "ok")
+            self.add(self.bi("✅ 0 问题 — 无需确定性修复", "✅ 0 problems — nothing to fix"), "ok")
             return
         self.phase = "autofix"
         self.add("")
-        self.add("── deterministic auto-fix ──", "heading")
-        self.add("%d 个已知问题 — 自动修复中（可逆、带备份；你随后在 LLM 阶段监督 CoT）" % len(self.problems), "dim")
+        self.add(self.T("── 确定性自动修复 ──", "── deterministic auto-fix ──"), "heading")
+        self.add(self.bi(
+            "%d 个已知问题 — 自动修复中（可逆、带备份；随后在 LLM 阶段监督 CoT）" % len(self.problems),
+            "%d known issue(s) — auto-fixing (reversible, backed up; supervise the CoT in the LLM phase)" % len(self.problems)), "dim")
 
         def on_line(line):
             self.add_md(line)
@@ -545,9 +580,10 @@ class Tui:
         except Exception:
             pass
         if not self.problems:
-            self.add("✅ 确定性修复完成：全部解决   // deterministic fix complete", "ok")
+            self.add(self.bi("✅ 确定性修复完成：全部解决", "✅ deterministic fix complete"), "ok")
         else:
-            self.add("%d 个问题残留 — 交给 LLM 自动诊断修复" % len(self.problems), "warn")
+            self.add(self.bi("%d 个问题残留 — 交给 LLM 自动诊断修复" % len(self.problems),
+                            "%d problem(s) left — the LLM will diagnose & fix" % len(self.problems)), "warn")
 
     def phase_llm(self):
         """The LLM runs AUTONOMOUSLY (0 problems → read-only acceptance check;
@@ -560,13 +596,20 @@ class Tui:
         self._write_ctx("## deterministic pass (done)\n%s problems remaining: %s\n" % (
             len(self.problems), "; ".join(p["hint"] for p in self.problems)))
         self.add("")
-        self.add("── LLM session ──", "heading")
+        self.add(self.T("── LLM 会话 ──", "── LLM session ──"), "heading")
         if not self.problems:
-            self.add("✅ 体检 0 问题 / web %s — LLM 自动交叉验证中…" % ("正常" if self.web == "200" else "未起(HTTP %s)" % self.web), "ok")
+            self.add(self.bi(
+                "✅ 体检 0 问题 / web %s — LLM 自动交叉验证中…" % ("正常" if self.web == "200" else "未起(HTTP %s)" % self.web),
+                "✅ 0 problems / web %s — LLM auto cross-checking…" % ("up" if self.web == "200" else "down (HTTP %s)" % self.web)), "ok")
         else:
-            self.add("%d 个问题残留 — LLM 自动诊断修复中…" % len(self.problems), "warn")
-        self.add("你随时可以：Ctrl-C 打断并输入指引 / 直接输入消息回车（会先打断）→ 引导 LLM", "dim")
-        self.add("PgUp/PgDn 滚动看完整 CoT · /help · /quit", "dim")
+            self.add(self.bi(
+                "%d 个问题残留 — LLM 自动诊断修复中…" % len(self.problems),
+                "%d problem(s) left — the LLM is diagnosing & fixing…" % len(self.problems)), "warn")
+        self.add(self.bi(
+            "你随时可以：Ctrl-C 打断并输入指引 / 直接输入消息回车（会先打断）→ 引导 LLM",
+            "anytime: Ctrl-C interrupts a running agent; type + Enter steers it (interrupts first)"), "dim")
+        self.add(self.bi("PgUp/PgDn 滚动看完整 CoT · /help · /quit",
+                         "PgUp/PgDn scroll the full CoT · /help · /quit"), "dim")
         self._auto_start()
         while not self.quit:
             self.web = web_code() if time.time() - self.last_web > 2 else self.web
@@ -575,27 +618,29 @@ class Tui:
                 left = int(self.auto_quit - time.time())
                 if left <= 0:
                     self.add("")
-                    self.add("✅ 无问题，自动退出 — 如需再次体检：dsh-doctor --guide", "ok")
+                    self.add(self.bi("✅ 无问题，自动退出 — 如需再次体检：dsh-doctor --guide",
+                                      "✅ all green, auto-exiting — re-run dsh-doctor --guide anytime"), "ok")
                     self.quit = True
                     break
                 if left != getattr(self, "_last_left", -1):
                     self._last_left = left
-                    self.msg = "✅ 无问题 — %d 秒后自动退出（按任意键取消）   // all green — auto-exit in %ds" % (left, left)
+                    self.msg = self.bi("✅ 无问题 — %d 秒后自动退出（按任意键取消）" % left,
+                                        "✅ all green — auto-exit in %ds" % left)
             self.draw()
             ch = self._getch(100)
             if ch is not None:
                 if self.auto_quit:
                     self.auto_quit = 0.0
-                    self.msg = "自动退出已取消 — 可继续对话；q / Ctrl-C 退出   // auto-exit cancelled"
+                    self.msg = self.bi("自动退出已取消 — 可继续对话；q / Ctrl-C 退出", "auto-exit cancelled — keep chatting; q / Ctrl-C to leave")
                 self._handle(ch)
-        self.msg = "leaving LLM session"
+        self.msg = self.bi("正在退出 LLM 会话", "leaving LLM session")
 
     def _auto_start(self):
         if self.agent_state == "running":
             return
         self.add("")
-        self.add("── 自动运行：LLM 自愈/验收（CoT 实时渲染）──", "user")
-        self.msg = "agent 自动运行中 — Ctrl-C 可打断并输入指引   // auto-running — Ctrl-C to interrupt & steer"
+        self.add(self.T("── 自动运行：LLM 自愈/验收（CoT 实时渲染）──", "── auto-run: LLM self-heal/acceptance (CoT live) ──"), "user")
+        self.msg = self.bi("agent 自动运行中 — Ctrl-C 可打断并输入指引", "agent auto-running — Ctrl-C to interrupt & steer")
         self.start_agent(self._build_task(""))
 
     def phase_restart(self):
@@ -604,8 +649,10 @@ class Tui:
             return
         self.phase = "restart"
         self.add("")
-        self.add("web 仍未起（HTTP %s）— 自动重启中…（重启是 doctor 的本职，可逆）" % self.web, "err")
-        self.add("→ relaunching web…", "dim")
+        self.add(self.bi(
+            "web 仍未起（HTTP %s）— 自动重启中…（重启是 doctor 的本职，可逆）" % self.web,
+            "web still down (HTTP %s) — auto-restarting… (relaunching is the doctor's job, reversible)" % self.web), "err")
+        self.add(self.bi("→ 正在重启 web…", "→ relaunching web…"), "dim")
         rc, out = run_capture(["bash", DOCTOR, "--fix-item", "web"], timeout=300)
         self.add_md(out)
 
@@ -613,13 +660,17 @@ class Tui:
         self.phase = "done"
         self.web = web_code()
         self.add("")
-        self.add("── summary ──", "heading")
+        self.add(self.T("── 汇总 ──", "── summary ──"), "heading")
         if not self.problems:
-            self.add("✅ 无残留问题；web now: %s" % ("✅ up" if self.web == "200" else "❌ down"), "ok" if self.web == "200" else "err")
+            self.add(self.bi("✅ 无残留问题；web：%s" % ("正常" if self.web == "200" else "未起"),
+                             "✅ no leftover problems; web: %s" % ("up" if self.web == "200" else "down")),
+                     "ok" if self.web == "200" else "err")
         else:
-            self.add("%d 问题未解决；web now: %s" % (len(self.problems), "✅ up" if self.web == "200" else "❌ down"), "err")
-            self.add("提示：可重新运行 dsh-doctor --guide 或 --agent 继续；或 /help 后继续对话", "dim")
-        self.add("press q or Ctrl-C to exit   // 按 q 或 Ctrl-C 退出", "dim")
+            self.add(self.bi("%d 问题未解决；web：%s" % (len(self.problems), "正常" if self.web == "200" else "未起"),
+                             "%d problem(s) unresolved; web: %s" % (len(self.problems), "up" if self.web == "200" else "down")), "err")
+            self.add(self.bi("提示：可重新运行 dsh-doctor --guide 或 --agent 继续；或 /help 后继续对话",
+                             "tip: re-run dsh-doctor --guide or --agent, or keep chatting (/help)"), "dim")
+        self.add(self.bi("按 q 或 Ctrl-C 退出", "press q or Ctrl-C to exit"), "dim")
 
     # ---- input -------------------------------------------------------------
     def _read_esc_sequence(self):
@@ -749,25 +800,33 @@ class Tui:
         if text == "/help":
             self._show_help()
             return
+        if text == "/lang":
+            self.lang = "zh" if self.lang == "en" else "en"
+            self.add(self.bi("语言已切换为中文（主语言）", "switched to English (primary)"), "ok")
+            return
         if self.agent_state == "running":
             self.interrupt_agent()
         self._run_llm_turn(text)
 
     def _show_help(self):
-        self.add("── keys ──", "heading")
-        self.add("  type + Enter        send a message to the agent   // 输入后回车发送给 LLM", "plain")
-        self.add("  ←/→ Home/End        move the input cursor (edit mid-text)  // 移动输入光标", "plain")
-        self.add("  ⌫ / Delete          delete before/after the cursor", "plain")
-        self.add("  Ctrl-C              interrupt a running agent (or quit when idle)", "plain")
-        self.add("  PgUp/PgDn/Home/End  scroll the pane", "plain")
-        self.add("  Ctrl-L              clear the pane", "plain")
-        self.add("  /quit  /q           leave the LLM session", "plain")
-        self.add("  /help               this list", "plain")
+        self.add(self.T("── 按键 ──", "── keys ──"), "heading")
+        self.add(self.bi("  输入 + 回车        给 LLM 发消息/指引（运行中会先打断）",
+                         "  type + Enter       send a message to the agent (interrupts first)"), "plain")
+        self.add(self.bi("  ←/→ Home/End       移动输入光标（行内编辑）",
+                         "  ←/→ Home/End       move the input cursor (mid-text editing)"), "plain")
+        self.add(self.bi("  ⌫ / Delete         删除光标前/后", "  ⌫ / Delete          delete before/after the cursor"), "plain")
+        self.add(self.bi("  Ctrl-C              打断运行中的 agent（空闲时退出）",
+                         "  Ctrl-C              interrupt a running agent (or quit when idle)"), "plain")
+        self.add(self.bi("  PgUp/PgDn           滚动回看 CoT", "  PgUp/PgDn           scroll the pane"), "plain")
+        self.add(self.bi("  Ctrl-L              清屏", "  Ctrl-L              clear the pane"), "plain")
+        self.add(self.bi("  /quit  /q           退出 LLM 会话", "  /quit  /q           leave the LLM session"), "plain")
+        self.add(self.bi("  /lang               切换语言 / switch language", "  /lang               switch language"), "plain")
+        self.add(self.bi("  /help               本帮助", "  /help               this list"), "plain")
 
     def _run_llm_turn(self, text):
         task = self._build_task(text)
         self.add("")
-        self.add("── you → agent ──", "user")
+        self.add(self.T("── 你 → agent ──", "── you → agent ──"), "user")
         self.add_md(text)
         self._write_ctx("\n## you\n%s\n" % text)
         self.msg = "agent running — Ctrl-C to interrupt   // agent 运行中——Ctrl-C 可打断"

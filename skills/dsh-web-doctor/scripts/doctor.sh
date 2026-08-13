@@ -72,8 +72,9 @@ dsh web Doctor — 一键救火（web 挂了 / 起不来时用）
 
 用法（不用记，直接跑 dsh-doctor 就有交互菜单）：
   dsh-doctor                    交互菜单（推荐）
-  dsh-doctor --guide            mini TUI（全屏交互终端）：诊断 → 逐步修复 →
-                                LLM 对话（markdown 渲染 CoT，随时打断/引导）
+  dsh-doctor --guide            mini TUI（全屏交互终端）：诊断流式输出 →
+                                自动修复 → LLM 自动运行（markdown 渲染 CoT，
+                                随时 Ctrl-C 打断并输入指引）
   dsh-doctor --agent            LLM 智能自愈（诊断+找根因+修复+拉起 web）
   dsh-doctor --agent --force     强制 LLM 验收（即使诊断全绿也跑 LLM 交叉验证）
   dsh-doctor --fix --restart    确定性修复 + 拉起 web（不依赖 LLM）
@@ -1063,10 +1064,36 @@ fi
 # --guide: real mini TUI (curses, full-screen, interruptible chat with the
 # LLM, markdown rendering) when a terminal + python3+curses are available;
 # otherwise fall back to the step-by-step non-TTY guided mode.
+#
+# UX rule (2026-08-13, 2nd pass): NEVER let the user stare at a blank screen.
+# The deterministic diagnosis runs FIRST, streaming into the plain terminal
+# (visible progress line by line — same output as `dsh-doctor` alone), the
+# problem list is handed to the TUI via a JSON file, and ONLY THEN curses
+# takes over for the interactive part (fixes + LLM chat).
 run_guided() {
   if [ -t 0 ] && command -v python3 >/dev/null 2>&1 \
      && python3 -c 'import curses' >/dev/null 2>&1; then
-    python3 "$SKILLS_DIR/dsh-web-doctor/scripts/doctor-tui.py"
+    local json_file="${DSH_DOCTOR_PROBLEMS:-/tmp/dsh-doctor-problems.json}"
+    # 1. diagnosis streams into the terminal (no black screen)
+    echo
+    info "diagnosing — output below, then the interactive TUI starts   // 体检中——输出如下，随后进入交互 TUI"
+    doctor_diagnose
+    # 2. hand the structured problem list to the TUI
+    { printf 'WEB=%s\n' "$code"; printf '%s\n' "${PROBLEM_LIST[@]:-}"; } | python3 -c '
+import json, sys
+lines = sys.stdin.read().splitlines()
+web, probs = "000", []
+for ln in lines:
+    if ln.startswith("WEB="):
+        web = ln[4:]
+    elif "|" in ln:
+        i, h = ln.split("|", 1)
+        probs.append({"id": i, "hint": h})
+json.dump({"web": web, "count": len(probs), "problems": probs}, open(sys.argv[1] if len(sys.argv) > 1 else "/tmp/dsh-doctor-problems.json", "w"))
+' "$json_file"
+    echo
+    info "diagnosis done — starting the interactive TUI   // 体检完成——进入交互 TUI"
+    python3 "$SKILLS_DIR/dsh-web-doctor/scripts/doctor-tui.py" --problems-json "$json_file"
     return $?
   fi
   doctor_guided

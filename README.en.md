@@ -100,14 +100,15 @@ No black box.
 **Mini TUI guided mode (`--guide` / option 7, 2026-08-13 lesson)**: one unattended `--agent`
 long run once failed — derailed by a false-positive plugin-dep report, killed by its timeout,
 fixing nothing. **Lesson: long doctor tasks without a human steering them are unreliable.**
-Guided mode is a REAL full-screen TUI (python3+curses, stdlib only): status bar + scrollable
-pane + bottom input bar. It runs the deterministic diagnosis, walks each fix with
-`[Y]es/[n]o/[?]/[q]`, then opens an LLM chat: type a message + Enter to run the headless
-agent (context carried across turns), **Ctrl-C interrupts a running agent so you can steer it**,
-PgUp/PgDn/Home/End scroll, Ctrl-L clears, `/help` `/quit`. CoT, prompt and answers are
-rendered as MARKDOWN (headings / bold / inline code / code fences / lists / quotes), not raw
-text. No unattended long run by default; falls back to a step-by-step non-TTY mode when no
-terminal.
+Guided mode is a REAL full-screen TUI (python3+curses, stdlib only). The deterministic
+diagnosis first STREAMS into the plain terminal (no black screen), then the TUI takes over:
+status bar + scrollable markdown-rendered pane + bottom input bar. **The LLM decides and
+fixes autonomously** — known issues are deterministically auto-fixed (no per-item
+confirmation), 0 problems → read-only auto-acceptance ("✅ accepted" + evidence), leftovers →
+the LLM diagnoses & fixes on its own; it only asks the user when it truly cannot decide.
+The point of the interaction is to WATCH the full CoT (markdown: headings/bold/inline
+code/fences/lists/quotes) and **Ctrl-C to interrupt & steer** the agent mid-run. PgUp/PgDn
+scroll, `/help` `/quit`. Falls back to a step-by-step non-TTY mode when no terminal.
 
 **Layered design (why)**:
 - **Deterministic layer** (option 2): sensors + actuators — seconds, zero LLM cost, runs even

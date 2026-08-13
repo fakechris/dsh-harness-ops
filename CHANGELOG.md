@@ -10,15 +10,19 @@ Each entry links its squash-merged PR.
 ## [Unreleased]
 
 - `feat(web-doctor)`: mini TUI guided mode (`dsh-doctor --guide` / menu 7) — a
-  REAL full-screen interactive TUI (python3+curses, stdlib only): status bar +
-  scrollable markdown-rendered pane + bottom input bar. Deterministic diagnosis
-  → per-fix `[Y]es/[n]o/[?]/[q]` → **LLM chat**: type a message + Enter to run
-  the headless agent (context carried across turns), **Ctrl-C interrupts a
-  running agent so you can steer it**, CoT/prompt/answers rendered as MARKDOWN
-  (headings/bold/inline code/fences/lists/quotes). Falls back to a step-by-step
-  non-TTY mode when no terminal. Lesson from 2026-08-13: an unattended `--agent`
-  run once burned its whole timeout on noise, fixing nothing — no unattended
-  long run by default.
+  REAL full-screen interactive TUI (python3+curses, stdlib only). The
+  deterministic diagnosis STREAMS into the plain terminal first (no black
+  screen), then the TUI takes over: status bar + scrollable markdown-rendered
+  pane + bottom input bar. **The LLM decides and fixes autonomously**: known
+  issues auto-fixed deterministically (no per-item confirmation), 0 problems →
+  read-only auto-acceptance ("✅ accepted" + evidence), leftovers → the LLM
+  diagnoses & fixes on its own; it only asks the user when it truly cannot
+  decide. The interaction is for WATCHING the full CoT (markdown rendering:
+  headings/bold/inline code/fences/lists/quotes) and **Ctrl-C to interrupt &
+  steer** the agent mid-run (context carried across turns). Falls back to a
+  step-by-step non-TTY mode when no terminal. Lesson from 2026-08-13: an
+  unattended `--agent` run once burned its whole timeout on noise, fixing
+  nothing — no unattended long run by default.
 - `fix(web-doctor)`: `plugin-deps-check` resolves subpath imports via the
   package's exports map (e.g. `@deepseek-ai/dsh-client-runtime/client` was
   falsely reported MISSING — a misleading signal that derailed the LLM agent).

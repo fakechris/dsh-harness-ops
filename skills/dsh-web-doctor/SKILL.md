@@ -5,8 +5,8 @@ description: >-
   （web 健康、launcher 链、扩展 relink、**任意插件的依赖完整性**、槽可启动性、session 存储、web.log、最近会话最后发生的事）
   → 确定性自动修复（relink 自愈、**任意插件依赖自愈**、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
   或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式；
-  或 --guide mini TUI（全屏交互终端：诊断 → 逐步修复 → LLM 对话，CoT/prompt 用 markdown 渲染，
-  随时 Ctrl-C 打断并直接给 LLM 发引导消息），适合"不放心无人长跑"的场景。
+  或 --guide mini TUI（全屏交互终端：诊断流式输出 → 自动修复 → LLM 自动运行，CoT/prompt 用
+  markdown 渲染，随时 Ctrl-C 打断并输入指引），适合"不放心无人长跑"的场景。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
   "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（终端跑 dsh-doctor，无参数即交互菜单：体检/机械修复/LLM 自愈/引导模式+拉起）。
   English: out-of-band doctor for dsh web when it is down or won't boot (both A/B slots
@@ -14,9 +14,9 @@ description: >-
   chain, extension relinks, slot bootability, session store, web.log, last activity in
   recent sessions), auto-fixes known issues (relink self-heal, slot launcher, unknown
   session-event ignorable marking, corrupt-log repair), then relaunches web and verifies
-  HTTP 200. A --guide mini-TUI (full-screen curses: diagnosis, per-step fixes, LLM chat with
-  markdown-rendered CoT, interrupt-and-steer via Ctrl-C, no unattended long runs). Use when the
-  user reports web down,
+  HTTP 200. A --guide mini-TUI (full-screen curses: streaming diagnosis, auto-fix, autonomous
+  LLM with markdown-rendered CoT, interrupt-and-steer via Ctrl-C). Use when the user reports
+  web down,
   dsh web failing to boot, 3080 not responding, or asks for a doctor/self-heal run.
 ---
 
@@ -33,7 +33,7 @@ skills 的脚本，**不依赖任何 web 进程**。
 教训（2026-08-13）：`--agent` 有一次**无人值守跑满 300s 超时**——被一个误报的插件依赖
 （子路径导入被当成 MISSING）和一个误导性的 "deep check unavailable（槽可能坏了）" 提示带偏，
 什么都没修成。结论：**没有人 guide 的 doctor 长任务不靠谱** → 新增 **mini TUI 引导模式**
-（`--guide` / 菜单 7），每个修复逐步确认，LLM 步骤可选且受监督；同时修掉那两个误导源
+（`--guide` / 菜单 7），LLM 自动判断修复、用户看 CoT 随时打断；同时修掉那两个误导源
 （plugin-deps-check 按 exports map 解析子路径、deep-check 失败显示真实报错而不是断言槽坏了）。
 
 ## 何时用
@@ -113,7 +113,7 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 
 ```sh
 dsh-doctor                    # 交互菜单（终端下）；脚本/管道下 = 只读诊断
-dsh-doctor --guide            # mini TUI 引导模式（人机协同，逐步确认；LLM 可选）
+dsh-doctor --guide            # mini TUI：诊断流式 → 自动修复 → LLM 自动运行（看 CoT，随时打断）
 dsh-doctor --agent            # = 菜单 3（LLM 主脑；全绿时自动跳过）
 dsh-doctor --agent --force    # = 菜单 4（LLM 深度检测和修复，全绿也跑）
 dsh-doctor --fix --restart    # = 菜单 2（确定性修复 + 拉起）
@@ -127,7 +127,7 @@ dsh-doctor --quiet            # 少输出
 | Flag | 作用 |
 |---|---|
 | （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
-| `--guide` | **mini TUI（真正的全屏 TUI）**：python3+curses（stdlib，无第三方依赖），终端有 TTY 时自动启用；无 TTY/无 curses 回退为非交互逐步模式。布局 = 顶栏状态（web/槽/阶段/agent 状态）+ 中部滚动主区（诊断、逐项修复、LLM 会话，**markdown 渲染**：标题/粗体/行内代码/代码块/列表/引用）+ 底部输入条（随时输入）。LLM 阶段：输入+回车 = 给 agent 发消息（逐轮驱动 headless，上下文文件 `/tmp/dsh-doctor-chat.txt` 跨轮携带）；**Ctrl-C = 打断运行中的 agent**，输入引导后回车续聊；PgUp/PgDn/Home/End 滚动，Ctrl-L 清屏，`/help` `/quit`。修复阶段：`[Y]es/[n]o/[?]/[q]`。**默认不无人长跑**（2026-08-13 教训）；超时 `DSH_DOCTOR_AGENT_TIMEOUT`（默认 300s） |
+| `--guide` | **mini TUI（真正的全屏 TUI）**：python3+curses（stdlib，无第三方依赖），终端有 TTY 时自动启用；无 TTY/无 curses 回退为非交互逐步模式。**流程**：诊断先在普通终端流式输出（不黑屏）→ 进 TUI 后已知问题**确定性自动修复**（无逐项确认）→ **LLM 自动运行**（0 问题 = 只读自动验收 "✅ 验收通过"；残留问题 = 自动诊断修复；只有 LLM 无法判断时才问用户）。布局 = 顶栏状态（web/槽/阶段/agent 状态）+ 中部滚动主区（CoT/prompt/终答 **markdown 渲染**：标题/粗体/行内代码/代码块/列表/引用，工具调用 `[tool]` 行）+ 底部输入条。**交互 = 看 CoT + 随时打断**：Ctrl-C 打断运行中的 agent → 输入指引回车续聊（上下文 `/tmp/dsh-doctor-chat.txt` 跨轮携带）；PgUp/PgDn/Home/End 滚动，Ctrl-L 清屏，`/help` `/quit`。超时 `DSH_DOCTOR_AGENT_TIMEOUT`（默认 300s） |
 | `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt，含 2026-08-13 纪律：不把环境性噪音当槽坏了、连续 3-4 步无进展就停下报告）→ **实时显示 agent 的活动**（tail 它自己的 session 日志：推理/工具调用/生成）→ 读报告+日志推理根因 → 修复 → 验证 200 → 输出结论。健康时自动跳过（不烧 token）；`DSH_DOCTOR_AGENT_TIMEOUT` 可调超时（默认 300s），超时提示回退 `--fix`；Ctrl-C 会同时杀掉 agent |
 | `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **LLM 凭据检测**（权限归一化；key 缺失则明确提示补，不臆造）→ **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
@@ -149,34 +149,29 @@ dsh-doctor --quiet            # 少输出
 **背景**：0813 一次 `--agent` 无人值守长跑失败——被误报带偏、超时杀进程、什么都没修成。
 **原则**：**没有人 guide 的 doctor 长任务不靠谱** → 默认不做无人长跑。
 
-**它是真正的 TUI**（不是菜单）：`dsh-doctor --guide` 在终端里起 python3+curses 全屏界面
-（stdlib only，无 pip 依赖；无 TTY 时自动回退为非交互逐步模式）：
+**它是真正的 TUI**（不是菜单，也不是"每步确认"）：`dsh-doctor --guide` 先让**诊断在普通终端
+流式输出**（看得见进度，绝不黑屏），然后把结果交给 python3+curses 全屏界面（stdlib only，
+无 pip 依赖；无 TTY 时回退逐步模式）：
 
 ```
 ┌ doctor-tui | web:200 | phase:llm | agent:running | current:slot-b | PgUp/Dn=scroll ┐
-│ ── you → agent ──                                                                    │
-│ 用一句话总结：web 和扩展链接是否健康？                                                │
-│ agent running — Ctrl-C to interrupt                                                  │
-│ **健康。** web（:3080 返回 200）、扩展 relink 全部完好…（markdown 渲染：粗体/列表/     │
-│   行内代码/代码块，CoT 与终答都以 markdown 渲染）                                     │
-│ [tool] skill {"name":"dsh-web-doctor"}                                               │
-└ you → agent > _                                                                    ┘
+│ ── 自动运行：LLM 自愈/验收（CoT 实时渲染）──                                            │
+│ 让我理解当前任务：1. 我是 dsh web 的 out-of-band 自愈 agent …（CoT 流式 markdown）      │
+│ [tool] skill {"name":"dsh-web-doctor"}                                                │
+│ **健康。** web（:3080 返回 200）、扩展 relink 全部完好…（终答 markdown 渲染）           │
+└ you → agent (Enter=send ^C=interrupt /help) > _                                      ┘
 ```
 
-流程：诊断（只读，进主区）→ 逐项修复（`[Y]es/[n]o/[?]/[q]`）→ LLM 对话阶段 → web 未起则
-确认重启 → 汇总（fixed/skipped/failed）。
+**分工（2026-08-13 第 3 次修正）**：**LLM 自动判断、自动修复**——用户不逐项确认。
+- 已知问题 → **确定性自动修复**（`doctor.sh --fix`，可逆带备份，无逐项确认）
+- 0 问题 → **LLM 自动只读交叉验证**，输出"✅ 验收通过"+证据清单
+- 有残留问题 → **LLM 自动诊断根因并修复**（优先复用确定性原语）
+- **只有 LLM 真正无法判断/需要用户决策时才问**（如缺 API key、不确定删除/改动）
+- **交互的意义 = 让用户看清完整 CoT**：全屏实时渲染推理/工具调用/终答（markdown），
+  用户随时 **Ctrl-C 打断并输入指引**，agent 按指引继续；PgUp/PgDn 滚动回看。
 
-**LLM 对话（随时打断、直接沟通）**：headless agent 是 one-shot（CLI 无 resume/chat），
-TUI 逐轮驱动：你输入消息 → 带完整上下文的下一轮 headless 运行 → CoT 实时流式渲染进主区；
-**Ctrl-C 打断运行中的 agent**（raw 模式下  作为按键，不是 SIGINT 自杀），输入引导后
-回车 = 带新引导的下一轮；上下文文件 `/tmp/dsh-doctor-chat.txt` 跨轮累积（每次进入会话
-重置，避免上一轮环境串味——0813 实测教训）。`DSH_DOCTOR_AGENT_TIMEOUT`（默认 300s）兜底。
-
-**markdown 渲染**：CoT / prompt / 终答按 markdown 渲染——`#` 标题、`**粗体**`、`*斜体*`、
-`` `行内代码` ``、``` ```代码块``` ```、`-` 列表、`>` 引用；流式增量渲染（行状态机，代码
-围栏跨行缓冲），不是裸文本。
-
-任何一步可逆（修复原语自带备份/校验）；`q`/`/quit`/空闲时 Ctrl-C 退出，已应用修复保持生效。
+上下文文件 `/tmp/dsh-doctor-chat.txt` 跨轮携带（每会话重置）；`DSH_DOCTOR_AGENT_TIMEOUT`
+（默认 300s）兜底。任何修复可逆；`q`/`/quit`/空闲 Ctrl-C 退出。
 
 ## 诊断项（doctor 查什么）
 

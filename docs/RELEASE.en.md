@@ -100,7 +100,7 @@ script.
 
 ### 2.1 "Do we need to repackage on every update?"
 
-**No manual packaging.** This repo is a **hybrid** (3 skills + 1 bundle plugin); each
+**No manual packaging.** This repo is a **hybrid** (4 skills + 1 bundle plugin); each
 component uses its own mechanism:
 
 | Component | Type | Distribution/install | Update action |
@@ -117,8 +117,8 @@ git-install requirement. Skills need no build.
 
 ### 2.2 Versioning
 
-- Root `VERSION` file (SemVer; currently `0.2.0`)
-- git tag: `vX.Y.Z` (e.g. `v0.2.0`) per release
+- Root `VERSION` file (SemVer; currently `0.3.0`)
+- git tag: `vX.Y.Z` (e.g. `v0.3.0`) per release
 - `CHANGELOG.md`: one section per version, linking squash-merged PRs
 - Rule: `fix:` → patch; `feat:` → minor; breaking → major (bump after merge, before tag)
 
@@ -127,10 +127,10 @@ git-install requirement. Skills need no build.
 ```sh
 # 1) Changes go through PRs (squash merge, AGENTS.md L4)
 # 2) After merge: bump version + update CHANGELOG
-echo "0.2.1" > VERSION
+echo "0.3.0" > VERSION
 # 3) Tag and ship
-git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.2.1"
-git tag v0.2.1 && git push origin main --tags
+git add VERSION CHANGELOG.md && git commit -m "chore(release): v0.3.0"
+git tag v0.3.0 && git push origin main --tags
 # 4) Consumers update
 bash scripts/update.sh
 ```
@@ -176,7 +176,7 @@ bash skills/dsh-web-guard/scripts/install.sh   # optional: self-healing daemon
   — then follow the official channel;
 - **Public distribution** of the bundle to users outside the org (git install forces
   them to `allowBuilds`; npm prebuilt avoids that friction);
-- **Semver range resolution** in profiles (`^0.2.0` instead of a pinned commit);
+- **Semver range resolution** in profiles (`^0.3.0` instead of a pinned commit);
 - **Offline tarballs** via `pnpm pack`.
 
 Then publish only `plugins/dsh-restart-recover` (drop `private: true`, build `lib/`

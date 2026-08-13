@@ -48,7 +48,7 @@ dsh-harness-ops（本仓库）
 ├── skills/dsh-session-recovery/  会话丢失诊断：0 sessions/日志损坏 → 定位 → 无损修复 → 重启
 │   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
 ├── skills/dsh-web-doctor/        out-of-band 医生：web/A/B 全挂时终端一键诊断→修复→拉起
-│   └── scripts/                   doctor.sh / session-last-activity.mjs
+│   └── scripts/                   doctor.sh / doctor-tui.py / session-last-activity.mjs
 └── plugins/dsh-restart-recover/   重启续接插件：agent/created 检测 interrupted → 自动注入续接
     └── src/index.ts               cordis 插件（监听 agent/created，零 dsh-track 依赖）
 ```
@@ -100,14 +100,60 @@ dsh-doctor --guide            # mini TUI 引导模式：逐步确认每个修复
 **LLM 深度检测/修复时**，`[llm]` 流式输出**完整思维链**——它怎么想（推理全文）、决定跑什么
 命令（工具 + 完整命令）、得到什么结果，全程可见，不是黑盒。
 
-**mini TUI 引导模式（`--guide` / 菜单 5，2026-08-13 教训）**：一次无人值守的 `--agent` 长跑
-失败过——被误报带偏、超时被杀、什么都没修成。**教训：没有人 guide 的 doctor 长任务不靠谱。**
-引导模式是**真正的全屏 TUI**（python3+curses，stdlib，无第三方依赖）：诊断先**在普通终端
-流式输出**（不黑屏），然后进 TUI：顶栏状态 + 可滚动主区 + 底部输入条。**LLM 自动判断、自动
-修复**——已知问题确定性自动修复（无逐项确认），0 问题自动只读验收（"✅ 验收通过"），残留问题
-LLM 自动诊断修复；**只有 LLM 真正卡住/需要决策时才问用户**。交互的意义是**看清完整 CoT**：
-CoT/prompt/终答 markdown 渲染（标题/粗体/行内代码/代码块/列表/引用），随时 **Ctrl-C 打断
-并输入指引**，agent 按指引继续；PgUp/PgDn 滚动，`/help` `/quit`。无终端时回退逐步模式。
+### mini TUI：设计与使用（`dsh-doctor --guide` / 菜单 5）
+
+**为什么是 TUI**（2026-08-13 教训）：一次无人值守的 `--agent` 长跑失败——被误报带偏、超时
+被杀、什么都没修成。**没有人 guide 的 doctor 长任务不靠谱**。mini TUI 是"有人看着的自愈"：
+LLM 自动干活，你看着它怎么想，觉得不对就打断。
+
+**三条设计原则**：
+
+1. **LLM 自动判断、自动修复**——已知问题确定性自动修复（无逐项确认）；0 问题自动只读验收
+   （输出"✅ 验收通过"+证据清单）；残留问题 LLM 自动诊断根因并修复。
+2. **交互 = 看清完整 CoT + 随时打断**——完整推理链 markdown 实时渲染；**Ctrl-C 打断运行中的
+   agent**，输入指引后回车，agent 按指引继续（上下文跨轮携带）。
+3. **只有 LLM 真正卡住/需要决策时才问用户**（缺 API key、不确定的破坏性操作）——否则绝不把
+   决策扔给你。全绿跑完自动出结论，5 秒后自动退出。
+
+**界面**（python3+curses，零第三方依赖；无终端时自动回退逐步模式）：
+
+```
+┌ doctor-tui | web:200 | phase:llm | agent:thinking ⠋ | current:slot-b | PgUp/Dn=scroll ┐
+│ ── 自动运行：LLM 自愈/验收（CoT 实时渲染）──                                             │
+│ 让我理解当前任务：1. 我是 dsh web 的 out-of-band 自愈 agent …（CoT markdown 流式）       │
+│ [tool] skill {"name":"dsh-web-doctor"}                                                  │
+│ **健康。** web（:3080 返回 200）、扩展 relink 全部完好…（终答 markdown 渲染）             │
+│ ✅ 验收通过：web 正常、无残留问题 — 无需任何操作                                          │
+│ ✅ 无问题 — 5 秒后自动退出（按任意键取消）                                                │
+└ you → agent (Enter=send ^C=interrupt /help) > _                                        ┘
+```
+
+**使用流程**：
+
+```sh
+dsh-doctor --guide          # 或菜单 5
+```
+
+1. **诊断**先在普通终端流式输出（一行行可见，绝不黑屏）
+2. 进 TUI：已知问题**确定性自动修复**（relink/插件依赖/launcher/会话，可逆带备份）
+3. **LLM 自动运行**：0 问题 → 只读交叉验证出"✅ 验收通过"；有残留 → 自动诊断修复
+4. **收尾**：全绿 → 5 秒倒计时自动退出（按任意键取消，继续对话）；有问题 → 明确提示继续或退出
+
+**按键**：
+
+| 键 | 作用 |
+|---|---|
+| 输入 + Enter | 给 LLM 发消息/指引（agent 运行中会先打断） |
+| Ctrl-C | 打断运行中的 agent（空闲时退出） |
+| ←/→ Home/End | 输入光标移动（行内编辑，中文安全） |
+| ⌫ / Delete | 删除光标前/后 |
+| PgUp/PgDn | 滚动回看完整 CoT |
+| Ctrl-L | 清屏 |
+| `/help` `/quit` | 按键帮助 / 退出 |
+
+**渲染**：CoT/prompt/终答按 **markdown** 渲染（标题/粗体/斜体/行内代码/代码块/列表/引用），
+工具调用显示为 `[tool]` 行；agent 运行时状态栏有 `thinking ⠋` 动态指示。**中文（CJK）
+输入/编辑完整支持**（UTF-8 locale、宽字符列宽、行内光标编辑）。
 
 **分层设计**（为什么这样）：
 - **确定性层**（菜单 2）：传感器+执行器——秒级、零 LLM 成本、web 挂得再彻底也能跑；
@@ -156,7 +202,7 @@ bug-fix / simplification / architecture / process / testing，每篇带 `.zh.md`
 ## 1. 安装
 
 ```sh
-# 一键安装：3 个 skill 进 ~/.dsh/skills + dsh-restart-recover bundle 进 web profile
+# 一键安装：4 个 skill 进 ~/.dsh/skills + dsh-restart-recover bundle 进 web profile
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 cd dsh-harness-ops
 bash scripts/install.sh

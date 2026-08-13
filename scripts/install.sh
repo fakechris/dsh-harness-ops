@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # dsh-harness-ops installer — one command to install (or re-install) this
 # toolbox on a machine:
-#   1. copies the three skills into ~/.dsh/skills (the default scan dir),
+#   1. copies the four skills into ~/.dsh/skills (the default scan dir),
 #   2. installs the dsh-restart-recover bundle into the `web` profile
 #      (via `dsh plugin add`, the official pnpm-backed mechanism),
 #   3. prints a hint for the optional web-guard daemon.

@@ -9,6 +9,14 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+- `feat(web-doctor)`: TUI finish verdict — when the LLM agent finishes, the
+  TUI never leaves the user guessing at a bare input prompt: 0 problems + web
+  up → "✅ 验收通过：web 正常、无残留问题" + a 5s auto-exit countdown (any key
+  cancels and lets you keep chatting); problems remain → "⚠ N 个问题未解决" +
+  explicit "keep chatting or q to quit". Agent-done state also shows a live
+  'thinking' spinner in the status bar (web-GUI-style alive indicator).
+
+
 - `fix(web-doctor)`: TUI i18n + input editing — Chinese (CJK) input & editing
   works: UTF-8 locale set before curses (get_wch returned CJK byte-wise
   before), wide-char column math (display_width/trunc_width) so CJK renders

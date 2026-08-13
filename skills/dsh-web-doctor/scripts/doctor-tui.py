@@ -251,6 +251,7 @@ class Tui:
         self.quit = False
         self.keyhelp_shown = False
         self.spin = 0
+        self.auto_quit = 0.0   # deadline for auto-exit after a green acceptance; 0 = off
 
     # ---- pane -------------------------------------------------------------
     def add(self, text, style="plain"):
@@ -346,7 +347,20 @@ class Tui:
                 # NOTE: do NOT push the stdout final into recent_texts — that
                 # buffer holds SESSION-LOG streamed events only; a later run
                 # with identical output must still be shown, not deduped away.
-            self.msg = "agent finished — type the next message or press q / Ctrl-C to leave   // 本轮完成——可继续输入，或 q / Ctrl-C 退出"
+            # explicit finish verdict — never leave the user guessing what to do
+            if not self.problems and self.web == "200":
+                self.add("")
+                self.add("✅ 验收通过：web 正常、无残留问题 — 无需任何操作", "ok")
+                self.add("5 秒后自动退出；按任意键或继续输入可取消   // auto-exit in 5s; any key to cancel", "dim")
+                self.auto_quit = time.time() + 5
+                self.msg = "✅ 无问题 — %d 秒后自动退出（按任意键取消）   // all green — auto-exit in %ds" % (5, 5)
+            else:
+                self.add("")
+                self.add("⚠ agent 完成，但仍有 %d 个问题未解决（web %s）" % (
+                    len(self.problems), "正常" if self.web == "200" else "未起"), "err")
+                self.add("继续输入让 LLM 处理，或 q / Ctrl-C 退出   // keep chatting or quit", "dim")
+                self.msg = "agent 完成 — 还有 %d 个问题；继续输入或 q 退出   // %d problem(s) left; chat on or quit" % (
+                    len(self.problems), len(self.problems))
         elif time.time() - self.agent_start > AGENT_TIMEOUT:
             self.interrupt_agent()
             self.msg = "agent timed out (%ss) — interrupted; type guidance to retry   // 超时已打断；可输入引导重试" % AGENT_TIMEOUT
@@ -557,9 +571,22 @@ class Tui:
         while not self.quit:
             self.web = web_code() if time.time() - self.last_web > 2 else self.web
             self.poll_agent()
+            if self.auto_quit:
+                left = int(self.auto_quit - time.time())
+                if left <= 0:
+                    self.add("")
+                    self.add("✅ 无问题，自动退出 — 如需再次体检：dsh-doctor --guide", "ok")
+                    self.quit = True
+                    break
+                if left != getattr(self, "_last_left", -1):
+                    self._last_left = left
+                    self.msg = "✅ 无问题 — %d 秒后自动退出（按任意键取消）   // all green — auto-exit in %ds" % (left, left)
             self.draw()
             ch = self._getch(100)
             if ch is not None:
+                if self.auto_quit:
+                    self.auto_quit = 0.0
+                    self.msg = "自动退出已取消 — 可继续对话；q / Ctrl-C 退出   // auto-exit cancelled"
                 self._handle(ch)
         self.msg = "leaving LLM session"
 

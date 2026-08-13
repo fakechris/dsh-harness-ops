@@ -32,5 +32,15 @@
   ],
   "publishConfig": {
     "access": "public"
-  }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "dsh-plugin",
+    "dsh-bundle",
+    "restart",
+    "self-heal",
+    "recovery",
+    "plugin"
+  ]
 }

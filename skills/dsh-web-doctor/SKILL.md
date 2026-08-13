@@ -4,16 +4,19 @@ description: >-
   dsh web 挂了/A/B 双槽都起不来时的 out-of-band 医生：不依赖 web 进程，纯终端一键诊断
   （web 健康、launcher 链、扩展 relink、**任意插件的依赖完整性**、槽可启动性、session 存储、web.log、最近会话最后发生的事）
   → 确定性自动修复（relink 自愈、**任意插件依赖自愈**、bin/dsh 补位、未知事件 ignorable、损坏日志修复）→ 把 web 拉回来并验证；
-  或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式。
+  或 --agent 模式交给 headless LLM agent（读报告+日志推理根因、自适应修复、验证），应对 DSH 改版与新故障模式；
+  或 --guide mini TUI 引导模式（人机协同：每个修复逐步确认，LLM 步骤可选——只读复核/受监督修复），
+  适合"不放心无人长跑"的场景。
   当用户说"web 挂了怎么查"、"dsh web 起不来"、"3080 挂了"、"怎么自愈"、"跑一下 doctor"、
-  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（终端跑 dsh-doctor，无参数即交互菜单：体检/LLM 自愈/确定性修复+拉起）。
+  "看看系统为什么挂了"时使用，即使 GUI/agent 都不可用（终端跑 dsh-doctor，无参数即交互菜单：体检/机械修复/LLM 自愈/引导模式+拉起）。
   English: out-of-band doctor for dsh web when it is down or won't boot (both A/B slots
   broken, GUI/agent unavailable). One terminal command diagnoses (web health, launcher
   chain, extension relinks, slot bootability, session store, web.log, last activity in
   recent sessions), auto-fixes known issues (relink self-heal, slot launcher, unknown
   session-event ignorable marking, corrupt-log repair), then relaunches web and verifies
-  HTTP 200. Use when the user reports web down, dsh web failing to boot, 3080 not
-  responding, or asks for a doctor/self-heal run.
+  HTTP 200. A --guide mini-TUI mode walks each fix with per-step confirmation (LLM step
+  optional: read-only review or supervised repair). Use when the user reports web down,
+  dsh web failing to boot, 3080 not responding, or asks for a doctor/self-heal run.
 ---
 
 # dsh web Doctor（out-of-band 自愈）
@@ -25,6 +28,12 @@ skills 的脚本，**不依赖任何 web 进程**。
 诞生背景（2026-08-11）：切换事故 + 扩展链接消失事故的现场修复（查 session → 找根因 →
 修 relink/会话 → 拉起 web）每一步都能脚本化，但缺一个不依赖 web 的一键入口——浪费了数小时
 人工。本 skill 把它自动化。
+
+教训（2026-08-13）：`--agent` 有一次**无人值守跑满 300s 超时**——被一个误报的插件依赖
+（子路径导入被当成 MISSING）和一个误导性的 "deep check unavailable（槽可能坏了）" 提示带偏，
+什么都没修成。结论：**没有人 guide 的 doctor 长任务不靠谱** → 新增 **mini TUI 引导模式**
+（`--guide` / 菜单 7），每个修复逐步确认，LLM 步骤可选且受监督；同时修掉那两个误导源
+（plugin-deps-check 按 exports map 解析子路径、deep-check 失败显示真实报错而不是断言槽坏了）。
 
 ## 何时用
 
@@ -47,31 +56,34 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 ```
 
 **web 挂的时候直接敲 `dsh-doctor`（不带任何路径），不用记参数**——它会显示双语菜单
-（**默认英文**，菜单里选 `5` 切换中英文；或用环境变量 `DSH_DOCTOR_LANG=zh` 固定中文）：
+（**默认英文**，菜单里选 `6` 切换中英文；或用环境变量 `DSH_DOCTOR_LANG=zh` 固定中文）：
 
 ```
-==============================================================
+=============================================================
   dsh web Doctor — one-shot rescue        // dsh web 医生 — 一键救火
   web(:3080): ✅ healthy                  // 当前 web: ✅ 正常
-==============================================================
+=============================================================
   1) Quick check (diagnose only)          // 快速体检（只读）
-  2) LLM auto-repair (recommended)        // 大模型自动修复（推荐）：LLM 读
-                                          //   诊断+日志推理根因，发现/修复
-                                          //   任意插件问题
-  3) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：
+  2) Fix config issues (mechanical)      // 修复配置问题（机械，不依赖 LLM）：
      incl. relaunch web                  //   relink/插件依赖/launcher/session/
                                           //   LLM 凭据等已知配置故障
-  4) Exit                                 // 退出
-  5) Switch language 中文                 // 切换语言
-  6) Force LLM acceptance (even if green)// 强制 LLM 验收（全绿也跑）
-  choose [1-6]:
+  3) LLM repair (recommended)            // LLM 修复（推荐）：LLM 读诊断+日志
+                                          //   推理根因，发现/修复任意插件问题
+  4) Deep LLM check & repair (always)   // LLM 深度检测和修复（每次都跑，
+                                          //   不因诊断全绿而跳过）
+  5) Exit                                 // 退出
+  6) Switch language 中文                 // 切换语言
+  7) Mini TUI (guided)                   // 引导模式：逐步确认每个修复；
+                                          //   LLM 可选（只读复核/自动修复）
+  choose [1-7]:
 ```
 
-- 不确定选什么 → **选 2**（大模型自动修复，推荐——能发现/修复任意插件问题）
-- 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 3**（机械修复配置问题）
+- 不确定选什么 → **选 3**（大模型自动修复，推荐——能发现/修复任意插件问题）
+- 想先看看情况 → **选 1**；web 起不来且没 LLM → **选 2**（机械修复配置问题）
+- **不放心无人长跑 / 上次 --agent 被带偏过** → **选 7**（mini TUI 引导模式）
 - **要 LLM 深度检测和修复**（不因诊断全绿跳过，LLM 独立交叉验证每一项）→ **选 4**，或命令行 `dsh-doctor --agent --force`
 - 诊断全绿时 `--fix` 会**跳过修复**（"no problems — skipping repair"），不做无意义操作；`--agent` 同理，除非 `--force`
-- 菜单每次跑完回到菜单，按 `4` 退出
+- 菜单每次跑完回到菜单，按 `5` 退出
 
 ## LLM 配置修复（检查什么 / 处理什么 / 工作流）
 
@@ -82,7 +94,7 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 2. `DEEPSEEK_API_KEY` 是否非空（**不打印 key**）
 3. `~/.dsh/settings.yaml` 是否存在、非空（空/损坏会拖垮 web 启动）
 
-**处理（`--fix` / 菜单 3 自动做）**：
+**处理（`--fix` / 菜单 2 自动做）**：
 1. **key 缺失/为空 + 交互终端** → 提示粘贴 key（`read -s` 隐藏输入）→ 备份旧 `.env`
    → 写入/去重 `DEEPSEEK_API_KEY` → `chmod 600` → 完成配置
 2. **key 缺失 + 非交互**（脚本/管道）→ 打印精确命令：`echo 'DEEPSEEK_API_KEY=<key>' >> ~/.dsh/.env`
@@ -100,9 +112,10 @@ dsh-doctor                          # ① PATH 命令（装好后 ~/.local/bin/d
 
 ```sh
 dsh-doctor                    # 交互菜单（终端下）；脚本/管道下 = 只读诊断
-dsh-doctor --agent            # = 菜单 2（LLM 主脑；全绿时自动跳过）
+dsh-doctor --guide            # mini TUI 引导模式（人机协同，逐步确认；LLM 可选）
+dsh-doctor --agent            # = 菜单 3（LLM 主脑；全绿时自动跳过）
 dsh-doctor --agent --force    # = 菜单 4（LLM 深度检测和修复，全绿也跑）
-dsh-doctor --fix --restart    # = 菜单 3（确定性修复 + 拉起）
+dsh-doctor --fix --restart    # = 菜单 2（确定性修复 + 拉起）
 dsh-doctor --fix              # 只确定性修复，不拉起
 dsh-doctor --quiet            # 少输出
 ```
@@ -113,7 +126,8 @@ dsh-doctor --quiet            # 少输出
 | Flag | 作用 |
 |---|---|
 | （无） | 交互菜单（终端）；管道/脚本下退化为只读诊断 |
-| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt）→ **实时显示 agent 的活动**（tail 它自己的 session 日志：推理/工具调用/生成）→ 读报告+日志推理根因 → 修复 → 验证 200 → 输出结论。健康时自动跳过（不烧 token）；`DSH_DOCTOR_AGENT_TIMEOUT` 可调超时（默认 300s），超时提示回退 `--fix` |
+| `--guide` | **mini TUI 引导模式**：诊断 → 每个问题逐个 `[Y]es/[n]o/[?]detail/[q]uit` 确认修复 → 重验 → **LLM 步骤可选**（1 跳过 / 2 只读复核：headless agent 只读交叉验证，不改任何文件，`DSH_DOCTOR_REVIEW_TIMEOUT` 默认 150s / 3 复核+修复：受监督的自动修复，随时 Ctrl-C）→ web 未起则确认后拉起。**默认不无人长跑**（2026-08-13 教训）；`q` 立即退出，已应用修复保持生效 |
+| `--agent` | **LLM 主脑**：体检报告 tee 到 `/tmp/dsh-doctor-report.txt` → `dsh --profile headless` 起 one-shot LLM agent（内置自愈 prompt，含 2026-08-13 纪律：不把环境性噪音当槽坏了、连续 3-4 步无进展就停下报告）→ **实时显示 agent 的活动**（tail 它自己的 session 日志：推理/工具调用/生成）→ 读报告+日志推理根因 → 修复 → 验证 200 → 输出结论。健康时自动跳过（不烧 token）；`DSH_DOCTOR_AGENT_TIMEOUT` 可调超时（默认 300s），超时提示回退 `--fix`；Ctrl-C 会同时杀掉 agent |
 | `--fix` | 确定性自动修复：relink 自愈 → **任意插件依赖自愈**（plugin-deps-check）→ bin/dsh 补位 → 会话未知事件 ignorable → 损坏日志修复 → **LLM 凭据检测**（权限归一化；key 缺失则明确提示补，不臆造）→ **verify 重查**（不依赖 LLM） |
 | `--restart` | 修复后拉起 web（kill 旧 + nohup 重启 + 轮询 HTTP 200）；web 已 200 则跳过 |
 
@@ -126,8 +140,26 @@ dsh-doctor --quiet            # 少输出
 
 **为什么不能只有确定性**：写死的规则（产物路径、错误形态、配置格式）会随 DSH 改版失效
 （0811 就删过 `bin/dsh`）；新故障模式规则想不到。
-**为什么不能只有 LLM**：web 挂时 agent 起不来（headless 也依赖 harness 本身）；让 LLM 扫 92 个
-session 太慢太贵；修复需要不变的操作原语。**确定性传感器 + LLM 大脑是正解。**
+**为什么不能只有 LLM**：web 挂时 agent 起不来（headless 也依赖 harness 本身）；让 LLM 逐个扫
+所有 session 太慢太贵；修复需要不变的操作原语。**确定性传感器 + LLM 大脑是正解。**
+
+### mini TUI 引导模式（`--guide` / 菜单 7，2026-08-13 教训）
+
+**背景**：0813 一次 `--agent` 无人值守长跑失败——被误报带偏、超时杀进程、什么都没修成。
+**原则**：**没有人 guide 的 doctor 长任务不靠谱** → 默认不做无人长跑。
+
+流程：`doctor_diagnose`（只读）→ 逐个问题（`[Y]es` 应用 / `[n]o` 跳过 / `[?]` 详情 /
+`[q]` 退出）→ 重跑诊断验证 → LLM 步骤三选一 → web 未起则确认后重启 → 汇总
+（fixed / skipped / failed）。
+
+LLM 步骤（可选，受监督）：
+- **1 跳过**（默认，确定性已修完并验证）
+- **2 只读复核**：headless agent 只读交叉验证（prompt 明确"不改任何文件"），
+  找出确定性检查漏掉的问题；超时 `DSH_DOCTOR_REVIEW_TIMEOUT`（默认 150s）
+- **3 复核+修复**：headless agent 可改文件（自带 0813 纪律 prompt）；随时 Ctrl-C
+  （会同时杀掉 agent），超时 `DSH_DOCTOR_AGENT_TIMEOUT`（默认 300s）
+
+任何一步都是可逆的（修复原语自带备份/校验）；`q` 立即退出，已应用修复保持生效。
 
 ### headless 依赖面（--agent 的可用边界，实测确认 2026-08-11）
 
@@ -144,7 +176,7 @@ bash-sandbox/fs-policy/commands）。
 | LLM 凭据 | **依赖** | 不需要 |
 
 **边界结论**：扩展依赖故障（如 dsh-llm 链接被清）→ `--agent` 的 LLM 照样能上（headless 不
-加载扩展）；**槽/编译产物坏或 LLM 凭据缺失** → headless 起不来 → 用菜单 3 / `--fix --restart`
+加载扩展）；**槽/编译产物坏或 LLM 凭据缺失** → headless 起不来 → 用菜单 2 / `--fix --restart`
 （L0 不依赖槽和凭据）。
 
 ## 诊断项（doctor 查什么）
@@ -162,7 +194,9 @@ bash-sandbox/fs-policy/commands）。
    `dependencies`（out-of-tree bundles），扫描每个插件 `lib/` 产物的 `@deepseek-ai/*` /
    `cordis` import vs 其 node_modules——**不依赖 ab-config**，未来装的任何插件（dsh-loop、
    dsh-kb-sieve…）缺失依赖都会被抓住；缺失时自动从 current 槽 packages 按包名找修复来源
-   （`FIXABLE`）或报告无来源（`MISSING`）。
+   （`FIXABLE`）或报告无来源（`MISSING`）。**子路径导入按包名 + exports map 解析**
+   （0813 修：`@deepseek-ai/dsh-x/client` 这类子路径由包自身 exports 提供，不是
+   node_modules 下的独立条目——旧版把健康的 client-runtime 误报成 MISSING，带偏过 LLM）。
 8. **LLM 配置健康**：凭据读取链 = 进程环境 → cwd/.env → `~/.dsh/.env`（`DEEPSEEK_API_KEY`）。
    doctor 检查 `.env` 存在、key 非空（**不打印 key 本身**）——web 和 headless 都依赖它。
 9. **最近会话"最后发生的事"**：`session-last-activity.mjs` 列最近活跃会话的最后事件
@@ -176,7 +210,7 @@ doctor 是**最后一道防线**，它自己不能依赖"可能已经被弄坏�
 | 层 | 依赖 | 覆盖 | 失败影响 |
 |---|---|---|---|
 | **L0（自包含）** | 系统工具（node 内置/zstd CLI/jq/curl/ps/lsof）+ 纯文件操作 | 布局快照、web 健康、launcher 链、relink 存在性、槽可启动、**session 文件层检查**、最近活动、relink/launcher 修复、**内置 restart 兜底** | **永不因自身依赖失败**——即使 current 槽的编译产物整个没了也能跑 |
-| **L1（深度，可降级）** | current 槽编译产物（`@deepseek-ai/dsh-session-persistence-jsonl` 等） | `check-all-sessions` 全量读取校验、`repair-unknown-events` ignorable 修复 | 加载失败 → 明确报告"deep check unavailable（current slot 可能坏了）"，L0 结论仍权威，doctor 继续 |
+| **L1（深度，可降级）** | current 槽编译产物（`@deepseek-ai/dsh-session-persistence-jsonl` 等） | `check-all-sessions` 全量读取校验、`repair-unknown-events` ignorable 修复 | 加载失败 → 报告**真实报错** + "这是增强检查，文件层结论仍权威，且失败通常是环境噪音而非槽坏了"（0813 起不再断言"槽可能坏了"），L0 结论仍权威，doctor 继续 |
 
 **设计契约**：doctor 的 L0 路径**绝不 import 任何 `@deepseek-ai/*` 编译包、绝不加载扩展插件**。
 L1 只是增强，加载不了就降级——救火工具必须在自己要修的故障里也活着。

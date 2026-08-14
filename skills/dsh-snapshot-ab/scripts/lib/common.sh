@@ -141,6 +141,32 @@ ab_other_slot() {
 
 ab_is_initialized() { [ "$(ab_state_get '.current // ""')" != "" ]; }
 
+# ---- npm helpers (npm-distribution mode, 2026-08-14+) ----------------------
+
+# The npm package that is the upstream truth (ab-config npm.package).
+ab_npm_pkg() { ab_config_get '.npm.package // "@deepseek-ai/dsh"'; }
+# Which dist-tag to follow (ab-config npm.distTag; default next for rc stream).
+ab_npm_dist_tag() { ab_config_get '.npm.distTag // "next"'; }
+ab_npm_registry() { ab_config_get '.npm.registry // "https://registry.npmjs.org/"'; }
+
+# ab_npm_version <dist-tag> — the version currently published under a dist-tag.
+ab_npm_version() {
+  local tag pkg reg
+  tag="${1:-$(ab_npm_dist_tag)}"
+  pkg=$(ab_npm_pkg); reg=$(ab_npm_registry)
+  npm view "$pkg" dist-tags."$tag" --registry="$reg" 2>/dev/null || true
+}
+
+# ab_npm_published_at <version> — ISO timestamp when a version was published.
+ab_npm_published_at() {
+  local ver pkg reg
+  ver="$1"; pkg=$(ab_npm_pkg); reg=$(ab_npm_registry)
+  npm view "$pkg" time --registry="$reg" --json 2>/dev/null | jq -r --arg v "$ver" '.[$v] // ""' 2>/dev/null || true
+}
+
+# ab_slot_version <slot> — npm version the slot was prepared with (state).
+ab_slot_version() { local s="$1"; [ -n "$s" ] || { printf ''; return; }; ab_state_get ".slots.$s.version // \"\""; }
+
 # ab_boot_cmd <dir> — command line that boots this slot's dsh CLI in the SAME
 # way production runs it. Order matters:
 #   1. bin/dsh        — the launcher chain (~/.local/bin/dsh -> current/bin/dsh)
@@ -208,6 +234,31 @@ EOF
     ln -sfn "$HOME/.dsh/skills/dsh-web-doctor/scripts/doctor.sh" "$dir/bin/dsh-doctor"
     ab_log "  slot doctor -> $dir/bin/dsh-doctor"
   fi
+}
+
+# ab_ensure_slot_launcher_npm <slot-dir> — npm-distribution slot launcher.
+# An npm slot is a DSH_HOME whose dsh CLI lives in the profile/node_modules
+# closure (@deepseek-ai/dsh). Prefer the .bin/dsh symlink npm created (it
+# points at the package's real bin entry); fall back to resolving it directly.
+ab_ensure_slot_launcher_npm() {
+  local dir="$1" pkg binjs
+  [ -x "$dir/bin/dsh" ] && return 0
+  pkg=$(ab_npm_pkg)
+  binjs="$dir/profiles/node_modules/.bin/dsh"
+  if [ ! -e "$binjs" ]; then
+    binjs=$(node -e "try{console.log(require.resolve('$pkg/bin.js',{paths:['$dir/profiles/node_modules']}))}catch(e){}" 2>/dev/null || true)
+  fi
+  [ -n "$binjs" ] && [ -e "$binjs" ] || { ab_warn "  npm launcher: cannot locate $pkg CLI in slot $dir"; return 1; }
+  mkdir -p "$dir/bin"
+  cat > "$dir/bin/dsh" <<EOF
+#!/bin/sh
+# slot launcher (npm distribution): boots the npm-installed dsh CLI.
+# Managed by ab.sh (ab_ensure_slot_launcher_npm); do not edit.
+set -eu
+exec node "$binjs" "\$@"
+EOF
+  chmod +x "$dir/bin/dsh"
+  ab_log "  slot launcher -> $dir/bin/dsh (npm $pkg via $binjs)"
 }
 
 # ab_verify_relinks — self-heal the extensions' node_modules relinks against

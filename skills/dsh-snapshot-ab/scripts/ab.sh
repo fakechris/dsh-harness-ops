@@ -48,7 +48,7 @@ CMD="${1:-help}"
 shift || true
 
 FLAG_SLOT=""; FLAG_SNAPSHOT=""; FLAG_PORT=""; FLAG_SKIP_WEB=0; FLAG_KEEP=0; FLAG_FORCE=0; FLAG_YES=0; FLAG_JSON=0
-FLAG_FROM=""; FLAG_TO=""; FLAG_FULL=0
+FLAG_FROM=""; FLAG_TO=""; FLAG_FULL=0; FLAG_SOURCE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --slot) FLAG_SLOT="${2:-}"; shift 2 ;;
@@ -56,6 +56,7 @@ while [ $# -gt 0 ]; do
     --port) FLAG_PORT="${2:-}"; shift 2 ;;
     --from) FLAG_FROM="${2:-}"; shift 2 ;;
     --to) FLAG_TO="${2:-}"; shift 2 ;;
+    --source) FLAG_SOURCE=1; shift ;;          # npm 形态之外的手动源码路径
     --skip-web) FLAG_SKIP_WEB=1; shift ;;
     --keep) FLAG_KEEP=1; shift ;;
     --force) FLAG_FORCE=1; shift ;;
@@ -108,6 +109,37 @@ cmd_status() {
 }
 
 cmd_discover() {
+  # --source: legacy git-snapshot discovery (private snapshot branches / master).
+  if [ "$FLAG_SOURCE" = "1" ]; then
+    cmd_discover_source
+    return 0
+  fi
+  # Default: npm dist-tag is the upstream truth (2026-08-14+).
+  local pkg tag cur_ver newest_ver newest_at
+  pkg=$(ab_npm_pkg); tag=$(ab_npm_dist_tag)
+  ab_log "checking npm dist-tag $pkg@$tag ..."
+  newest_ver=$(ab_npm_version "$tag")
+  [ -n "$newest_ver" ] || ab_die "cannot resolve npm dist-tag $tag for $pkg (registry unreachable?)"
+  newest_at=$(ab_npm_published_at "$newest_ver")
+  ab_log "upstream npm $pkg@$tag: $newest_ver (published ${newest_at:-?})"
+  cur_ver=$(ab_slot_version "$(ab_current_slot)")
+  ab_log "current slot version: ${cur_ver:-<none>}"
+  if [ -n "$cur_ver" ] && [ "$cur_ver" != "$newest_ver" ]; then
+    ab_log "next candidate: $newest_ver (current $cur_ver)"
+  elif [ -n "$cur_ver" ] && [ "$cur_ver" = "$newest_ver" ]; then
+    ab_log "no new npm version beyond the current slot (up to date)"
+  else
+    ab_log "next candidate: $newest_ver (current slot has no recorded version)"
+  fi
+  if [ "$FLAG_JSON" = "1" ]; then
+    printf '{"package":"%s","distTag":"%s","version":"%s","publishedAt":"%s","current":"%s"}\n' \
+      "$pkg" "$tag" "$newest_ver" "${newest_at:-}" "${cur_ver:-}"
+  fi
+}
+
+# cmd_discover_source — legacy git-based discovery (snapshots/* or master),
+# reachable via `ab.sh discover --source`; kept for manual source-slot rotation.
+cmd_discover_source() {
   [ -n "$AB_MAIN" ] || ab_die "no main clone resolved"
   local upstream; upstream=$(ab_config_get '.upstream // "origin"')
   ab_log "fetching upstream ($upstream)..."
@@ -280,7 +312,21 @@ cmd_init() {
 cmd_prepare() {
   ab_is_initialized || ab_die "not initialized — run: ab.sh init --yes"
   [ -n "$AB_MAIN" ] || ab_die "no main clone resolved"
-  local slot other cur snap cand_ref cand_branch dir
+  # --source: legacy source-checkout prepare (git master / snapshot branches).
+  if [ "$FLAG_SOURCE" = "1" ]; then
+    cmd_prepare_source
+    return $?
+  fi
+  # Default: npm-package slot (2026-08-14+). The slot is a DSH_HOME directory
+  # holding one npm version; extensions are npm packages in its profile.
+  cmd_prepare_npm
+}
+
+# cmd_prepare_npm — prepare a candidate slot from the npm dist-tag.
+# Slot layout: <slot-dir> is a DSH_HOME (profiles/web + node_modules); the
+# profile declares the official bundles plus extensions' npm packages.
+cmd_prepare_npm() {
+  local slot other cur dir
   slot="$FLAG_SLOT"
   cur=$(ab_current_slot)
   if [ -z "$slot" ]; then other=$(ab_other_slot); slot="$other"; fi
@@ -290,7 +336,103 @@ cmd_prepare() {
   if [ "$phase" = "switched" ] && [ "$confirmed" = "false" ] && [ "$FLAG_FORCE" != "1" ]; then
     ab_die "current version is not yet confirmed stable — slot '$slot' is the only rollback; run 'ab.sh confirm' after the user confirms, or pass --force"
   fi
-  git -C "$AB_MAIN" fetch origin 2>&1 | tail -1 || true
+
+  local pkg tag version published
+  pkg=$(ab_npm_pkg); tag=$(ab_npm_dist_tag)
+  version="${FLAG_SNAPSHOT:-$(ab_npm_version "$tag")}"
+  [ -n "$version" ] || ab_die "cannot resolve npm $pkg@$tag"
+  published=$(ab_npm_published_at "$version")
+  ab_log "preparing slot $slot <- npm $pkg@$version (published ${published:-?})"
+
+  # nothing to do if this version is already running or already prepared here
+  local cur_ver cand_phase cand_ver
+  cur_ver=$(ab_slot_version "$cur")
+  cand_phase=$(ab_state_get '.phase // "idle"')
+  cand_ver=$(ab_state_get '.candidateVersion // ""')
+  if [ "$version" = "$cur_ver" ]; then
+    ab_warn "npm $pkg@$version is the running version; nothing new to prepare"
+    return 0
+  fi
+  if [ "$cand_phase" = "prepared" ] && [ "$(ab_state_get '.candidate // ""')" = "$slot" ] && [ "$cand_ver" = "$version" ]; then
+    ab_warn "npm $pkg@$version already prepared in slot $slot — run 'ab.sh verify' instead"
+    return 0
+  fi
+
+  dir=$(ab_slot_dir "$slot")
+  ab_log "slot dir: $dir"
+  ab_lock "prepare-$$" || ab_die "another A/B operation holds the lock"
+  trap 'ab_unlock' EXIT
+
+  # --- (re)build the slot as an isolated DSH_HOME --------------------------
+  rm -rf "$dir"; mkdir -p "$dir/profiles/web"
+  if ! acc_npm_install "$dir" "$pkg" "$version"; then ab_warn "npm slot install failed"; ab_fail_prepare "$slot"; fi
+
+  # --- extensions: add their npm packages to the slot closure --------------
+  # Extensions' peer deps (@deepseek-ai/*) must resolve from the SAME closure
+  # as the official dsh packages (profiles/node_modules), so install them
+  # there, then declare each in profiles/web as a bundle row.
+  local exts n i ext extnpm extname
+  exts=$(ab_config_get '.extensions // [] | length')
+  i=0
+  while [ "$i" -lt "$exts" ]; do
+    ext=$(ab_config_get ".extensions[$i]")
+    extname=$(printf '%s' "$ext" | jq -r '.name // ""')
+    extnpm=$(printf '%s' "$ext" | jq -r '.npm // ""')
+    if [ -n "$extnpm" ]; then
+      ab_log "  closure add $extnpm -> $dir/profiles"
+      if ! (cd "$dir/profiles" && npm install --registry="$(ab_npm_registry)" "$extnpm" --no-audit --no-fund >/dev/null 2>&1); then
+        ab_warn "npm install $extnpm failed"; ab_fail_prepare "$slot"
+      fi
+      if [ -n "$extname" ]; then
+        ab_log "  profile bundle += $extname"
+        python3 - "$dir/profiles/web/package.json" "$extname" <<'PY'
+import json, sys
+p, name = sys.argv[1], sys.argv[2]
+d = json.load(open(p))
+d.setdefault("dsh", {}).setdefault("profile", {}).setdefault("bundles", [])
+if name not in d["dsh"]["profile"]["bundles"]:
+    d["dsh"]["profile"]["bundles"].append(name)
+json.dump(d, open(p, "w"), indent=2, ensure_ascii=False)
+open(p, "a").write("\n")
+PY
+      fi
+    else
+      ab_warn "extension $extname has no npm field — skipped (source mode: --source)"
+    fi
+    i=$((i + 1))
+  done
+
+  # --- slot launcher (current/bin/dsh -> npm CLI bin) -----------------------
+  ab_ensure_slot_launcher_npm "$dir"
+
+  # --- web smoke on a staging port ------------------------------------------
+  local wport whost wtimeout
+  wport=$(ab_config_get '.web.port // 3081'); whost=$(ab_config_get '.web.host // "127.0.0.1"'); wtimeout=$(ab_config_get '.web.startupTimeoutSec // 180')
+  if lsof -iTCP:"$wport" -sTCP:LISTEN >/dev/null 2>&1; then
+    ab_warn "port $wport busy — skipping web smoke (use --keep with a free port, or check the config)"
+  else
+    if ! acc_web_smoke "$dir" "$wport" "$whost" "$wtimeout" "$FLAG_KEEP" "$FLAG_YES"; then
+      ab_warn "web smoke FAILED"; ab_fail_prepare "$slot"
+    fi
+  fi
+
+  # --- record prepared state ------------------------------------------------
+  ab_state_set --arg at "$(ab_now)" --arg slot "$slot" --arg ver "$version" --arg pub "${published:-}" '
+    .phase = "prepared" | .candidate = $slot | .candidateVersion = $ver
+    | .candidateEvidence = { preparedAt: $at, slot: $slot, version: $ver, publishedAt: $pub, mode: "npm" }
+    | .slots[$slot].version = $ver
+    | .history += [{ at: $at, action: "prepare", slot: $slot, version: $ver, mode: "npm" }]'
+  ab_save_state
+  ab_ok "prepared slot $slot <- $pkg@$version (npm mode)"
+  ab_log "next: ab.sh verify (re-check) → ab.sh e2e (browser) → ab.sh switch --yes"
+}
+
+cmd_prepare_source() {
+  local slot other cur cand_branch dir
+  slot="$FLAG_SLOT"
+  cur=$(ab_current_slot)
+  if [ -z "$slot" ]; then other=$(ab_other_slot); slot="$other"; fi
+  [ "$slot" != "$cur" ] || ab_die "candidate slot '$slot' is the current slot — pick the other one"
   if [ -n "$FLAG_SNAPSHOT" ]; then
     cand_branch="$FLAG_SNAPSHOT"
   else
@@ -412,8 +554,8 @@ ab_fail_prepare() {
     ext_restore_all "$_e2"
   done < <(ab_config_items '.extensions // [] | .[]')
   ab_state_set --arg slot "$slot" --arg at "$(ab_now)" '
-    .slots[$slot].snapshot = null | .slots[$slot].tip = null
-    | .phase = "idle" | .candidate = null | .candidateSnapshot = null
+    .slots[$slot].snapshot = null | .slots[$slot].tip = null | .slots[$slot].version = null
+    | .phase = "idle" | .candidate = null | .candidateSnapshot = null | .candidateVersion = null
     | .history += [{ at: $at, action: "prepare-failed", slot: $slot }]'
   ab_save_state
   ab_unlock

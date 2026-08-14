@@ -69,6 +69,37 @@ acc_install() {
   ( cd "$dir" && pnpm install --frozen-lockfile 2>&1 | tail -5 )
 }
 
+# acc_npm_install <slot-dir> <pkg> <version> — install an npm-distribution slot.
+# The slot is a DSH_HOME: profiles/web declares the official bundles; the dsh
+# CLI lives in profiles/node_modules (pnpm closure) so bin.js resolves from
+# there. Idempotent per slot (rm -rf happens in cmd_prepare_npm).
+acc_npm_install() {
+  local dir="$1" pkg="$2" version="$3" reg
+  reg=$(ab_npm_registry)
+  ab_log "npm slot install: $pkg@$version (registry $reg)"
+  mkdir -p "$dir/profiles/web"
+  cat > "$dir/profiles/web/package.json" <<'EOF'
+{
+  "name": "dsh-profile-web",
+  "private": true,
+  "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-web-app"] } },
+  "dependencies": {}
+}
+EOF
+  mkdir -p "$dir/profiles/node_modules"
+  cat > "$dir/profiles/package.json" <<'EOF'
+{
+  "name": "dsh-slot-closure",
+  "private": true,
+  "dependencies": {}
+}
+EOF
+  ( cd "$dir/profiles" && npm install "$pkg@$version" --registry="$reg" --no-audit --no-fund 2>&1 | tail -4 )
+  [ -x "$dir/profiles/node_modules/.bin/dsh" ] || [ -f "$dir/profiles/node_modules/$pkg/bin.js" ] \
+    || { ab_err "npm slot install: dsh CLI not found after install"; return 1; }
+  ab_log "  npm slot closure installed: $(ls "$dir/profiles/node_modules/@deepseek-ai/" 2>/dev/null | wc -l | tr -d ' ') @deepseek-ai packages"
+}
+
 # acc_build <candidate-dir> <skip-web>
 acc_build() {
   local dir="$1" skip_web="${2:-0}"

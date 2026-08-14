@@ -1,29 +1,32 @@
 ---
 name: dsh-snapshot-ab
 description: >-
-  每日上游快照的 A/B 双槽轮换 + 官方改动提炼机制。上游官方（dsh2026/test-fakechris）每天发布新的
-  snapshots/YYYYMMDDTHHMMSSZ-* 分支：日常分析——跑当天快照与前一天快照的 diff，先读官方 changelog
-  （新增 agent notes，ab.sh notes）再验证代码，产出 snapshot-diff-report 报告；升级轮换——新快照
-  检出到另一槽、挂接扩展（dsh-track 等）、构建+验收通过后才原子切换 current，下一天角色互换。
-  用户说"分析今天和昨天的快照 / 今天官方改了啥 / 官方改了什么 / 看下今天的 changelog / 官方发新快照了吗"
-  触发日常分析；说"官方发了新 branch / 切换新快照 / 升级到今天的 snapshot / AB 双版本轮换 / 跑一下
-  daily 快照更新"触发升级轮换。English: daily upstream-snapshot A/B dual-slot rotation plus
-  an official-change digest; use when the user asks what the official side changed between today's and
-  yesterday's snapshots (run the diff, read the agent-notes changelog first), mentions a new official
-  snapshot branch, switching or upgrading to today's snapshot, AB dual-version rotation, or a daily
-  snapshot update。
+  官方 DeepSeek Harness 的 A/B 双槽轮换（npm 生态版）+ 版本检测机制。上游真相 = npm registry：
+  检测 @deepseek-ai/dsh 的 dist-tag（next/latest），新版本装进另一槽（DSH_HOME + 扩展 npm 包），
+  验收（冒烟/浏览器 e2e）通过后原子切换 current，旧版本保留回滚；也支持 --source 手动源码路径
+  （git master / 快照分支）。用户说"官方发新版了吗 / 检查 npm 更新 / 升级到最新版 / AB 双版本轮换 /
+  切换新版本 / 跑一下更新"触发；说"官方今天改了啥 / 分析版本差异"触发版本对比。English: official
+  DeepSeek Harness A/B dual-slot rotation on the npm ecosystem — npm registry dist-tags are the
+  upstream truth; a new @deepseek-ai/dsh version is installed into the other slot (DSH_HOME plus
+  extension npm packages), verified (smoke / browser e2e), then current is switched atomically with
+  the old version kept for rollback; --source offers the legacy git path. Use when the user asks to
+  check for a new official npm release, upgrade to the latest version, rotate A/B versions, or diff
+  official versions。
 ---
 
-# DSH Snapshot A/B Rotation（快照 A/B 轮换）
+# DSH A/B Rotation — npm ecosystem（npm 生态版 A/B 轮换）
 
-上游官方每天发布一个新的 snapshot 分支（`snapshots/YYYYMMDDTHHMMSSZ-<sha>`），我们不做 rebase 式升级，而是把官方快照**原样**放入一个槽，在它之上重新挂接我们的扩展，验收通过再切换。两个槽 A/B 轮流当"当前版本"，任何时刻都有一个未动的旧版本可回滚。
+官方 2026-08-13 起从私有快照转为公开仓库 + npm 发布：**npm registry 是唯一发布真相**
+（master 可能落后 npm、无 git tag）。本机制不再跟随 git 快照分支，而是检测 `@deepseek-ai/dsh`
+的 dist-tag（`next` = 最新 rc，`latest` = 正式版），把新版本装进另一个槽（独立 DSH_HOME +
+扩展 npm 包），验收通过后原子切换 `current`，旧版本保留回滚。
 
 ## 何时用
 
-- 官方发布了新快照，要把运行版本换成新的（每天例行）。
-- 需要知道官方某天快照改了什么（日常分析：changelog + diff + 影响评估）。
-- 需要评估某个快照对我们扩展（dsh-track 等）的兼容性（构建/测试/冒烟）。
-- 需要回滚到上一个快照。
+- 官方发布了新 npm 版本（dist-tag 变化），要把运行版本换成新的。
+- 需要评估某 npm 版本对我们扩展（dsh-track 等）的兼容性（安装/冒烟/e2e）。
+- 需要回滚到上一个 npm 版本。
+- （手动）`--source` 走源码路径：git master / 快照分支 + 源码构建 + 扩展 relink。
 
 不要用本 skill 做 rebase 到 master 的升级（那是 `dsh-upgrade`）、或修改 harness 源码（那是 `dsh-customize`）。
 

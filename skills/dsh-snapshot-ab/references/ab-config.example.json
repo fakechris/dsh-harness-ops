@@ -1,10 +1,18 @@
 {
-  "upstream": "https://github.com/dsh2026/test-fakechris.git",
-  "snapshotRefPrefix": "refs/heads/snapshots/",
+  "upstream": "npm:@deepseek-ai/dsh",
+  "snapshotRefPrefix": "refs/heads/",
+  "snapshotBranch": "master",
   "sourcePathPrefix": "/Users/chris/.dsh/source/current",
+  "npm": {
+    "package": "@deepseek-ai/dsh",
+    "distTag": "next",
+    "registry": "https://registry.npmjs.org/",
+    "cacheDir": "/Users/chris/.dsh/npm-cache"
+  },
   "extensions": [
     {
       "name": "dsh-track",
+      "npm": "@fakechris/dsh-track",
       "repo": "/Users/chris/source/dsh-involute",
       "profile": "web",
       "skills": [
@@ -16,7 +24,8 @@
         "node_modules/@deepseek-ai/dsh-storage-json": "packages/storage/storage-json",
         "node_modules/@deepseek-ai/dsh-system-prompt": "packages/core/system-prompt",
         "node_modules/@deepseek-ai/dsh-tools": "packages/core/tools",
-        "node_modules/cordis": "vendor/cordis"
+        "node_modules/@deepseek-ai/cordis": "vendor/cordis",
+        "node_modules/@deepseek-ai/dsh-llm": "packages/llm/llm"
       },
       "tsconfig": "tsconfig.json",
       "tsconfigOut": "tsconfig.ab.json",
@@ -34,7 +43,7 @@
       "/"
     ],
     "smokeClientIds": [
-      "@deepseek-ai/dsh-track"
+      "@fakechris/dsh-track"
     ]
   },
   "acceptance": {
@@ -43,7 +52,7 @@
       "enabled": true,
       "checks": [
         {
-          "id": "@deepseek-ai/dsh-track",
+          "id": "@fakechris/dsh-track",
           "selector": "#dsh-track-fab",
           "expect": "present"
         }

@@ -1,6 +1,6 @@
 ---
 name: dsh-web-guard
-description: "dsh web 自愈——重启自动拉起 + 自动继续。agent 运行在 dsh web 进程内，kill 掉 3080 等于杀掉自己，无法自救。本 skill 提供完整的重启自愈：① 守护（scripts/install.sh 装成系统服务，launchd/systemd，PPID=1）在 web 死后 10 秒内自动拉起；② 配套插件 @deepseek-ai/dsh-restart-recover（本项目的 plugins/ 目录）监听 agent/created，检测到上次 turn 被中断后自动注入续接消息，agent 带着中断上下文继续 —— 用户零输入。当用户说\"重启 3080 / web 挂了怎么自动拉起来 / 切换后自己把自己拉起来 / kill 后不用手动启动 / 重启后自动继续 / 做重启守护\"时使用 English: self-healing restart for dsh web — auto-restart when web dies (launchd/systemd guard) plus auto-continue of the interrupted turn; use when the user says \"restart 3080\", \"web is down, bring it back\", \"restart after switchover\", \"no manual start after kill\", \"auto-continue after restart\", or \"make a restart guard\"。"
+description: "dsh web 自愈——重启自动拉起 + 自动继续。agent 运行在 dsh web 进程内，kill 掉 3080 等于杀掉自己，无法自救。本 skill 提供完整的重启自愈：① 守护（scripts/install.sh 装成系统服务，launchd/systemd，PPID=1）在 web 死后 10 秒内自动拉起；② 配套插件 @fakechris/dsh-restart-recover（本项目的 plugins/ 目录）监听 agent/created，检测到上次 turn 被中断后自动注入续接消息，agent 带着中断上下文继续 —— 用户零输入。当用户说\"重启 3080 / web 挂了怎么自动拉起来 / 切换后自己把自己拉起来 / kill 后不用手动启动 / 重启后自动继续 / 做重启守护\"时使用 English: self-healing restart for dsh web — auto-restart when web dies (launchd/systemd guard) plus auto-continue of the interrupted turn; use when the user says \"restart 3080\", \"web is down, bring it back\", \"restart after switchover\", \"no manual start after kill\", \"auto-continue after restart\", or \"make a restart guard\"。"
 ---
 
 # dsh-web-guard — dsh web 自愈（守护拉起 + 自动续接）

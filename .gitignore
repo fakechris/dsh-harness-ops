@@ -8,3 +8,6 @@ plugins/*/node_modules/
 
 # nested git worktrees (inside the workspace sandbox root)
 .worktrees/
+
+# bundle 插件零依赖，pnpm install 生成的锁文件无意义
+plugins/dsh-restart-recover/pnpm-lock.yaml

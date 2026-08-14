@@ -209,6 +209,8 @@ bash scripts/install.sh
 
 # 可选：自愈守护（launchd/systemd，web 死后 10s 自动拉起）
 bash skills/dsh-web-guard/scripts/install.sh
+#   v0.3.1 起判活只认 LISTEN 态 socket（-sTCP:LISTEN）——浏览器页面挂着的连接
+#   不会再把端口误判为"被占用"，web 死后守护必定拉起
 
 # 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
 # 通常只需确认 ab-config.json 里的 extensions（扩展仓库路径）与 web 端口
@@ -218,11 +220,13 @@ vi ~/.dsh/source/ab-config.json
 $AB status
 ```
 
-> **版本与发布**：本仓库是**发布单元**（GitHub 即分发，**不进 npm**，官方立场见
+> **版本与发布**：仓库是发布单元（GitHub 即分发）——skills（目录机制）不进 npm；
+> bundle 插件 `@fakechris/dsh-restart-recover` 已发 **npm**（官方立场见
 > [`docs/RELEASE.md`](docs/RELEASE.md)）。版本 = 根目录 `VERSION` + git tag `vX.Y.Z` +
 > [`CHANGELOG.md`](CHANGELOG.md)（SemVer）。
 > **更新不需要手工打包**：`bash scripts/update.sh` 一条命令完成
-> `git pull → 重建插件 lib → 重装 skills/bundle`（bundle 插件自带 `prepare` 脚本，git 拉源码后自动构建）。
+> `git pull → 重建插件 lib → 重装 skills/bundle`（v0.3.2 起自动解析工具链槽位 +
+> 自愈插件构建软链，轮换到 npm profile 布局槽位不再断链）。
 
 ```sh
 # 之后每次更新

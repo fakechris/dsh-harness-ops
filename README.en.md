@@ -225,6 +225,8 @@ bash scripts/install.sh
 
 # Optional: self-healing daemon (launchd/systemd, relaunches web ~10s after death)
 bash skills/dsh-web-guard/scripts/install.sh
+#   v0.3.1+: liveness check only counts LISTEN sockets (-sTCP:LISTEN) — a
+#   browser page holding connections no longer blocks the restart
 
 # Configure (auto-read on first run; see skills/dsh-snapshot-ab/references/ab-config.example.json)
 #    Usually you only confirm extensions (extension repo paths) and the web port in ab-config.json
@@ -234,14 +236,15 @@ vi ~/.dsh/source/ab-config.json
 $AB status
 ```
 
-> **Versioning & release**: this repository IS the distribution unit (GitHub is
-> the distribution — **no npm publish**, official stance in
+> **Versioning & release**: the repository IS the distribution unit (GitHub) —
+> skills (directory mechanism) are not on npm; the bundle plugin
+> `@fakechris/dsh-restart-recover` **is published to npm** (official stance in
 > [`docs/RELEASE.md`](docs/RELEASE.md)). Version = root `VERSION` file + git tag
 > `vX.Y.Z` + [`CHANGELOG.md`](CHANGELOG.md) (SemVer).
 > **Updates need no manual packaging**: `bash scripts/update.sh` does
 > `git pull → rebuild plugin lib → reinstall skills/bundle` in one step
-> (the bundle plugin ships a `prepare` script, so a git fetch of sources
-> rebuilds itself on install).
+> (v0.3.2+: auto-resolves the toolchain slot and self-heals the plugin's build
+> links, so rotating to an npm-profile-layout slot no longer breaks the build).
 
 ```sh
 # Every update afterwards

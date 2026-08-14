@@ -72,11 +72,13 @@ acc_install() {
 # acc_npm_install <slot-dir> <pkg> <version> — install an npm-distribution slot.
 # The slot is a DSH_HOME: profiles/web declares the official bundles; the dsh
 # CLI lives in profiles/node_modules (pnpm closure) so bin.js resolves from
-# there. Idempotent per slot (rm -rf happens in cmd_prepare_npm).
+# there. Uses pnpm (not npm): DSH's profile boot expects
+# profiles/node_modules/@deepseek-ai/<pkg> to be symlinks into a store (pnpm's
+# layout), and its healProfilesModuleFallback rejects real directories.
 acc_npm_install() {
   local dir="$1" pkg="$2" version="$3" reg
   reg=$(ab_npm_registry)
-  ab_log "npm slot install: $pkg@$version (registry $reg)"
+  ab_log "npm slot install: $pkg@$version (registry $reg, pnpm closure)"
   mkdir -p "$dir/profiles/web"
   cat > "$dir/profiles/web/package.json" <<'EOF'
 {
@@ -94,7 +96,7 @@ EOF
   "dependencies": {}
 }
 EOF
-  ( cd "$dir/profiles" && npm install "$pkg@$version" --registry="$reg" --no-audit --no-fund 2>&1 | tail -4 )
+  ( cd "$dir/profiles" && pnpm install "$pkg@$version" --registry="$reg" 2>&1 | tail -4 )
   [ -x "$dir/profiles/node_modules/.bin/dsh" ] || [ -f "$dir/profiles/node_modules/$pkg/bin.js" ] \
     || { ab_err "npm slot install: dsh CLI not found after install"; return 1; }
   ab_log "  npm slot closure installed: $(ls "$dir/profiles/node_modules/@deepseek-ai/" 2>/dev/null | wc -l | tr -d ' ') @deepseek-ai packages"
@@ -142,8 +144,17 @@ acc_web_smoke() {
     ab_warn "  candidate's dsh web has no --workspace-root flag; smoke without it"
   fi
   ab_log "smoke: $(ab_boot_cmd "$dir") web --port $port (log $log)"
+  # npm-distribution slots are isolated DSH_HOMEs: their profiles live under
+  # <slot>/profiles, so the booted web must see DSH_HOME=<slot-dir> or it would
+  # load the USER-level ~/.dsh profile (and any source-linked extensions in it).
+  # Source-checkout slots (git mode) share the user's ~/.dsh and need no HOME.
+  local env_prefix=""
+  if [ -d "$dir/profiles/web" ]; then
+    env_prefix="DSH_HOME=$dir"
+    ab_log "  npm slot: DSH_HOME=$dir"
+  fi
   # shellcheck disable=SC2086
-  ( cd "$dir" && nohup $(ab_boot_cmd "$dir") web --port "$port" --host "$host" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
+  ( cd "$dir" && nohup env $env_prefix $(ab_boot_cmd "$dir") web --port "$port" --host "$host" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
   pid=$(cat "$log.pid")
   i=0
   while [ "$i" -lt "$timeout" ]; do

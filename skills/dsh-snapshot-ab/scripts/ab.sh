@@ -367,10 +367,12 @@ cmd_prepare_npm() {
   rm -rf "$dir"; mkdir -p "$dir/profiles/web"
   if ! acc_npm_install "$dir" "$pkg" "$version"; then ab_warn "npm slot install failed"; ab_fail_prepare "$slot"; fi
 
-  # --- extensions: add their npm packages to the slot closure --------------
-  # Extensions' peer deps (@deepseek-ai/*) must resolve from the SAME closure
-  # as the official dsh packages (profiles/node_modules), so install them
-  # there, then declare each in profiles/web as a bundle row.
+  # --- extensions: install into the closure, link into the web profile -----
+  # DSH resolves profile bundles from the profile dir's require paths
+  # (profiles/web/node_modules and up). The extension packages live in the
+  # SAME closure as the official dsh packages (profiles/node_modules) so their
+  # peer deps (@deepseek-ai/*) resolve from one store; profiles/web/node_modules
+  # then holds symlinks to them (mirroring the production layout).
   local exts n i ext extnpm extname
   exts=$(ab_config_get '.extensions // [] | length')
   i=0
@@ -380,12 +382,12 @@ cmd_prepare_npm() {
     extnpm=$(printf '%s' "$ext" | jq -r '.npm // ""')
     if [ -n "$extnpm" ]; then
       ab_log "  closure add $extnpm -> $dir/profiles"
-      if ! (cd "$dir/profiles" && npm install --registry="$(ab_npm_registry)" "$extnpm" --no-audit --no-fund >/dev/null 2>&1); then
-        ab_warn "npm install $extnpm failed"; ab_fail_prepare "$slot"
+      if ! (cd "$dir/profiles" && pnpm install "$extnpm" --registry="$(ab_npm_registry)" 2>&1 | tail -3); then
+        ab_warn "pnpm install $extnpm failed"; ab_fail_prepare "$slot"
       fi
-      if [ -n "$extname" ]; then
-        ab_log "  profile bundle += $extname"
-        python3 - "$dir/profiles/web/package.json" "$extname" <<'PY'
+      # bundle row = full package name (what resolveBundleDir looks up)
+      ab_log "  profile bundle += $extnpm"
+      python3 - "$dir/profiles/web/package.json" "$extnpm" <<'PY'
 import json, sys
 p, name = sys.argv[1], sys.argv[2]
 d = json.load(open(p))
@@ -395,7 +397,12 @@ if name not in d["dsh"]["profile"]["bundles"]:
 json.dump(d, open(p, "w"), indent=2, ensure_ascii=False)
 open(p, "a").write("\n")
 PY
-      fi
+      # symlink the extension into the web profile's node_modules so the
+      # bundle resolver can find it from the profile anchor
+      local scope pname
+      scope="${extnpm%%/*}"; pname="${extnpm#*/}"
+      mkdir -p "$dir/profiles/web/node_modules/$scope"
+      ln -sfn "$dir/profiles/node_modules/$extnpm" "$dir/profiles/web/node_modules/$scope/$pname"
     else
       ab_warn "extension $extname has no npm field — skipped (source mode: --source)"
     fi
@@ -404,6 +411,8 @@ PY
 
   # --- slot launcher (current/bin/dsh -> npm CLI bin) -----------------------
   ab_ensure_slot_launcher_npm "$dir"
+  # --- shared user data (sessions/storages @ ~/.dsh, not the slot) ----------
+  ab_ensure_shared_userdata_patch "$dir"
 
   # --- web smoke on a staging port ------------------------------------------
   local wport whost wtimeout
@@ -805,9 +814,16 @@ ab_restart_web() {
   log="$AB_SOURCE/web.log"
   # restart boots the NEW current (the symlink was already cut over)
   boot_dir=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")
+  # npm-distribution slots are isolated DSH_HOMEs: the web server must see
+  # DSH_HOME=<slot-dir> or it loads the user-level ~/.dsh profile instead.
+  local home_arg=""
+  if [ -d "$boot_dir/profiles/web" ]; then
+    home_arg="DSH_HOME=$boot_dir"
+    ab_log "  npm slot: DSH_HOME=$boot_dir"
+  fi
   ab_log "  starting: nohup $(ab_boot_cmd "$boot_dir") web (cwd $cwd, log $log)"
   # shellcheck disable=SC2086
-  ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup $(ab_boot_cmd "$boot_dir") web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
+  ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup env $home_arg $(ab_boot_cmd "$boot_dir") web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
   i=0; code=000
   while [ "$i" -lt 180 ]; do
     code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" 2>/dev/null || echo 000)

@@ -17,6 +17,10 @@
 #     不会形成"web 起不来→管理器反复拉起"的循环。
 #  5. 端口空闲才拉起 —— 有监听就不动（与 ab.sh switch 等协调，
 #     不会抢/杀对方拉起的进程）。
+#  6. 空闲判定用 `-sTCP:LISTEN`（2026-08-14 踩坑）：`lsof -ti :PORT` 会匹配
+#     浏览器侧的连接（远端端口 = PORT），web 死后浏览器还挂着页面/websocket
+#     重连时，端口永远"看起来被占用"，守护 20 分钟不拉起。只看监听态 socket
+#     才能正确判断"web 真的死了"。
 #
 # 环境变量：
 #   DGW_PORT  要守护的端口（默认 3080）
@@ -54,7 +58,9 @@ echo "$(date '+%H:%M:%S') guard up pid=$$ port=$PORT dsh=$DSH_BIN node=$(command
 
 # ── 3. 常驻循环（踩坑点 3/4/5）───────────────────────────────────────────
 while true; do
-  if ! lsof -ti :"$PORT" >/dev/null 2>&1; then
+  # 只认 LISTEN 态 socket（踩坑点 6）：浏览器对 3080 的 ESTABLISHED/重连连接
+  # 不算"web 活着"，否则 web 死后守护会被浏览器的连接挡住，永远不拉起。
+  if ! lsof -ti :"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then
     echo "$(date '+%H:%M:%S') port $PORT free — starting dsh web" >> "$LOG"
     ( cd "$WS" && nohup "$DSH_BIN" web --port "$PORT" >> "$LOG" 2>&1 < /dev/null & )
     echo "$(date '+%H:%M:%S')   spawn issued for $PORT" >> "$LOG"

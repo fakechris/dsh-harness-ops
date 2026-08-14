@@ -9,6 +9,22 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+## [0.3.2] — 2026-08-14
+
+**扩展构建链路修复 —— relink 布局兼容。** 轮换到正式版（npm profile 布局）槽位后，
+ab-config 的 relink 目标（旧 monorepo 路径 `packages/...` / `vendor/cordis`）在新布局下全部失效，
+扩展/插件构建解析 `@deepseek-ai/*` 失败、`update.sh` 卡在插件构建（2026-08-14 实测）。
+
+- `fix(ab)`: relink 解析 layout-aware —— 旧布局路径不存在时回退到
+  `<slot>/profiles/node_modules/@deepseek-ai/<pkg>`（pnpm closure），
+  `ab_verify_relinks` / `ext_relink` 两处同改，扩展 node_modules 软链在两种布局下都有效。
+  ([#61](https://github.com/dsh-external/dsh-harness-ops/pull/61))
+- `fix(plugin)`: `plugins/dsh-restart-recover/tsconfig.json` 去掉硬编码的 slot 绝对路径
+  （paths/typeRoots 改 `current` 基多布局候选）——构建不再依赖某个具体槽位。
+- `fix(update)`: `scripts/update.sh` 解析可用工具链槽位（profile 槽无 dev toolchain）+
+  插件构建前自愈 `@deepseek-ai/{cordis,dsh-agent,dsh-session}` 软链。
+
+
 ## [0.3.1] — 2026-08-14
 
 **web-guard 判活修复 + npm 生态轮换 + bundle 发布前整理。** 7 个 PR 自 v0.3.0。

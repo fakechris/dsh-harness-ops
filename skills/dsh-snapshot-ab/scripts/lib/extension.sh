@@ -10,11 +10,14 @@ set -euo pipefail
 AB_RELINK_JOURNAL="${AB_RELINK_JOURNAL:-$(mktemp -t dsh-ab-relink.XXXXXX)}"
 
 # ext_relink <ext-json> <candidate-dir> <ext-repo>
-#   Re-point node_modules/<pkg> symlinks at <candidate-dir>/<rel>; journal old
-#   targets for ext_restore_all.
+#   Re-point node_modules/<pkg> symlinks at the candidate's package for that
+#   pkg; journal old targets for ext_restore_all. Targets resolve layout-aware
+#   (ab_resolve_relink_target): legacy monorepo path first, npm profile
+#   closure fallback — the formal-release slots keep packages under
+#   profiles/node_modules/@deepseek-ai/<pkg> (2026-08-14).
 ext_relink() {
   local ext="$1" cand="$2" repo="$3"
-  local relink_map entry link rel old
+  local relink_map entry link rel old target
   relink_map=$(printf '%s' "$ext" | jq -c '.relink // {}')
   [ "$relink_map" = "{}" ] && return 0
   while IFS= read -r entry; do
@@ -24,9 +27,10 @@ ext_relink() {
     old=""
     [ -L "$repo/$link" ] && old=$(readlink "$repo/$link") || true
     mkdir -p "$repo/$(dirname "$link")"
-    ln -sfn "$cand/$rel" "$repo/$link"
+    target=$(ab_resolve_relink_target "$cand" "$rel" "$link")
+    ln -sfn "$target" "$repo/$link"
     printf '%s|%s|%s\n' "$repo" "$link" "$old" >> "$AB_RELINK_JOURNAL"
-    ab_log "  relink $link -> $cand/$rel"
+    ab_log "  relink $link -> $target"
   done < <(printf '%s' "$relink_map" | jq -c 'to_entries[]')
 }
 

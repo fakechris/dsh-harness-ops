@@ -13,20 +13,11 @@
     "noEmitOnError": true,
     "types": ["node"],
     "typeRoots": [
-      "/Users/chris/.dsh/source/slot-b/node_modules/@types",
-      "/Users/chris/.dsh/source/slot-b/apps/web/node_modules/@types"
-    ],
-    "paths": {
-      "@deepseek-ai/cordis": [
-        "/Users/chris/.dsh/source/slot-b/vendor/cordis/lib/types/index.d.ts"
-      ],
-      "@deepseek-ai/dsh-agent": [
-        "/Users/chris/.dsh/source/slot-b/packages/core/agent/lib/types/index.d.ts"
-      ],
-      "@deepseek-ai/dsh-session": [
-        "/Users/chris/.dsh/source/slot-b/packages/core/session/lib/types/index.d.ts"
-      ]
-    }
+      "/Users/chris/.dsh/source/current/profiles/node_modules/@types",
+      "/Users/chris/.dsh/source/current/profiles/web/node_modules/@types",
+      "/Users/chris/.dsh/source/current/node_modules/@types",
+      "/Users/chris/.dsh/source/current/apps/web/node_modules/@types"
+    ]
   },
   "include": ["src"],
   "exclude": ["tests", "lib"]

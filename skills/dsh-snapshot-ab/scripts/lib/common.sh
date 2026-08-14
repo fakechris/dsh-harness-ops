@@ -297,6 +297,33 @@ EOF
   ab_log "  shared user-data patch -> $dir/cordis.patch.yml (sessions/storages @ $home)"
 }
 
+# ab_resolve_relink_target <slot_dir> <rel_value> <link_key>
+#   Resolve one ab-config relink against a slot, layout-aware. Two layouts
+#   coexist across slots (2026-08-14): the legacy monorepo layout
+#   (`<slot>/packages/...`, `<slot>/vendor/cordis`) and the npm profile
+#   layout (`<slot>/profiles/node_modules/@deepseek-ai/<pkg>` — the pnpm
+#   closure of the formal release). The relink VALUE is a legacy-layout path;
+#   when it does not exist in the slot, derive the package name from the
+#   LINK KEY (node_modules/@deepseek-ai/<pkg>) and fall back to the profile
+#   closure. Prints the resolved target path (legacy target as last resort so
+#   a failure surfaces at the next build step instead of a silent empty link).
+ab_resolve_relink_target() {
+  local slot="$1" rel="$2" link="$3" pkg target
+  if [ -e "$slot/$rel" ] || [ -L "$slot/$rel" ]; then
+    printf '%s' "$slot/$rel"
+    return 0
+  fi
+  pkg=$(printf '%s' "$link" | sed -n 's#.*node_modules/@deepseek-ai/\([^/]*\)$#\1#p')
+  if [ -n "$pkg" ]; then
+    target="$slot/profiles/node_modules/@deepseek-ai/$pkg"
+    if [ -e "$target" ] || [ -L "$target" ]; then
+      printf '%s' "$target"
+      return 0
+    fi
+  fi
+  printf '%s' "$slot/$rel"
+}
+
 # ab_verify_relinks — self-heal the extensions' node_modules relinks against
 # the CURRENT slot. A relink is an unowned symlink (ab-config is the only
 # source of truth): any rebuild of the extension's node_modules (pnpm
@@ -319,15 +346,16 @@ ab_verify_relinks() {
     [ -n "$_e" ] || continue
     repo=$(printf '%s' "$_e" | jq -r '.repo')
     [ -d "$repo" ] || continue
-    local entry link rel
+    local entry link rel target
     while IFS= read -r entry; do
       [ -n "$entry" ] || continue
       link=$(printf '%s' "$entry" | jq -r '.key')
       rel=$(printf '%s' "$entry" | jq -r '.value')
       if [ ! -e "$repo/$link" ]; then
         mkdir -p "$repo/$(dirname "$link")"
-        ln -sfn "$cur_dir/$rel" "$repo/$link"
-        ab_warn "  relink self-heal: $repo/$link -> $cur_dir/$rel (was missing)"
+        target=$(ab_resolve_relink_target "$cur_dir" "$rel" "$link")
+        ln -sfn "$target" "$repo/$link"
+        ab_warn "  relink self-heal: $repo/$link -> $target (was missing)"
       fi
     done < <(printf '%s' "$_e" | jq -c '.relink // {} | to_entries[]')
   done < <(ab_config_items '.extensions // [] | .[]')

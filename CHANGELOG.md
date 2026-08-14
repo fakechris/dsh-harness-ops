@@ -9,11 +9,37 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
-- `feat(web-doctor)`: the TUI UI is now fully bilingual — every prompt/message/
-  verdict shows the primary language plus the other as a `//` note
-  (`DSH_DOCTOR_LANG=en|zh`, default en; `/lang` toggles in-session; the menu
-  language is inherited on entry). Status bar, titles and the input label
-  switch language; `/help` is bilingual.
+## [0.3.1] — 2026-08-14
+
+**web-guard 判活修复 + npm 生态轮换 + bundle 发布前整理。** 7 个 PR 自 v0.3.0。
+
+### dsh-web-guard（自愈守护）
+
+- `fix(web-guard)`: 判活改用 `lsof -ti :PORT -sTCP:LISTEN`——旧判定 `lsof -ti :PORT`
+  会匹配浏览器侧的连接（远端端口 = PORT），web 死后浏览器页面还挂着时守护会误判
+  "端口被占用"而**永不拉起**（2026-08-14 实测：3080 停机 ~20 分钟）。
+  ([#59](https://github.com/dsh-external/dsh-harness-ops/pull/59))
+
+### dsh-snapshot-ab（npm 生态轮换）
+
+- `feat(ab)`: npm-ecosystem A/B rotation —— dist-tag upstream（`latest`/`next`），
+  npm slot 取代/并存源码快照轮换。([#57](https://github.com/dsh-external/dsh-harness-ops/pull/57))
+- `fix(ab)`: npm slots 共享用户数据 —— 切换 npm slot 时 `~/.dsh` 数据（sessions/
+  storages/skills）不随槽切换，避免"切槽丢上下文"。([#58](https://github.com/dsh-external/dsh-harness-ops/pull/58))
+
+### bundle 发布准备（`plugins/dsh-restart-recover` → npm）
+
+- `feat(publish)`: 包改名 `@fakechris/dsh-restart-recover`（scope 迁移）。
+  ([#55](https://github.com/dsh-external/dsh-harness-ops/pull/55))
+- `fix(publish)`: 移除 `private: true`，`publishConfig.access=public` 允许 npm 发布。
+  ([#56](https://github.com/dsh-external/dsh-harness-ops/pull/56))
+
+### dsh-web-doctor
+
+- `feat(web-doctor)`: TUI 全量双语 —— 每个 prompt/message/verdict 以主语言 +
+  `//` 注记显示另一语言（`DSH_DOCTOR_LANG=en|zh`，默认 en；会话内 `/lang` 切换；
+  菜单语言继承入口）。状态栏/标题/输入框语言联动，`/help` 双语。
+  ([#53](https://github.com/dsh-external/dsh-harness-ops/pull/53))
 
 ## [0.3.0] — 2026-08-13
 

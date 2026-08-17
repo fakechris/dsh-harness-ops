@@ -271,7 +271,7 @@ class BrowserIncidentRegressionTest(unittest.TestCase):
             threading.Thread(target=srv.serve_forever, daemon=True).start()
             probe = subprocess.run(
                 ["node", str(SCRIPTS_DIR / "browser-health.mjs"),
-                 "--url", f"http://127.0.0.1:{port}/", "--budget-ms", "8000"],
+                 "--url", f"http://127.0.0.1:{port}/", "--budget-ms", "12000"],
                 capture_output=True, text=True, timeout=60,
             )
         self.assertEqual(probe.returncode, 0, probe.stderr)

@@ -361,7 +361,9 @@ def detect_browser(ctx: RunContext) -> list[CheckResult]:
     script = os.path.join(ctx.scripts_dir, "browser-health.mjs")
     if not os.path.isfile(script):
         return [CheckResult("browser.app", CheckStatus.UNKNOWN, Severity.WARNING, "browser-health.mjs missing")]
-    code, out, err = ctx.node(script, [], timeout=120)
+    budget = ctx.env.get("DSH_DOCTOR_BROWSER_BUDGET_MS")
+    args = ["--budget-ms", budget] if budget else []
+    code, out, err = ctx.node(script, args, timeout=120)
     if code == 2:
         summary = (out.strip() or err.strip() or "browser probe could not run").splitlines()[-1]
         return [CheckResult("browser.app", CheckStatus.UNKNOWN, Severity.ERROR, f"browser probe unavailable: {summary}")]

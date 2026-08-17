@@ -32,6 +32,24 @@
       "typecheck": "pnpm run typecheck",
       "build": "pnpm run build",
       "test": "pnpm test"
+    },
+    {
+      "name": "dsh-restart-recover",
+      "npm": "@fakechris/dsh-restart-recover",
+      "repo": "/Users/chris/source/dsh-skill-snapshot-ab/plugins/dsh-restart-recover",
+      "profile": "web",
+      "skills": [],
+      "relink": {
+        "node_modules/@deepseek-ai/cordis": "vendor/cordis",
+        "node_modules/@deepseek-ai/dsh-agent": "packages/core/agent",
+        "node_modules/@deepseek-ai/dsh-session": "packages/core/session",
+        "node_modules/vitest": "node_modules/vitest"
+      },
+      "tsconfig": "tsconfig.json",
+      "tsconfigOut": "tsconfig.ab.json",
+      "typecheck": "node scripts/dsh-env.mjs tsc -p tsconfig.ab.json --noEmit",
+      "build": "node scripts/dsh-env.mjs tsc -p tsconfig.ab.json",
+      "test": "npm test"
     }
   ],
   "web": {

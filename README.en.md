@@ -229,7 +229,7 @@ bash skills/dsh-web-guard/scripts/install.sh
 #   browser page holding connections no longer blocks the restart
 
 # Configure (auto-read on first run; see skills/dsh-snapshot-ab/references/ab-config.example.json)
-#    Usually you only confirm extensions (extension repo paths) and the web port in ab-config.json
+#    Usually you only confirm extensions (including dsh-restart-recover) and the web port
 vi ~/.dsh/source/ab-config.json
 
 # Verify
@@ -241,10 +241,10 @@ $AB status
 > `@fakechris/dsh-restart-recover` **is published to npm** (official stance in
 > [`docs/RELEASE.md`](docs/RELEASE.md)). Version = root `VERSION` file + git tag
 > `vX.Y.Z` + [`CHANGELOG.md`](CHANGELOG.md) (SemVer).
-> **Updates need no manual packaging**: `bash scripts/update.sh` does
-> `git pull → rebuild plugin lib → reinstall skills/bundle` in one step
-> (v0.3.2+: auto-resolves the toolchain slot and self-heals the plugin's build
-> links, so rotating to an npm-profile-layout slot no longer breaks the build).
+> **Updates do not build the plugin locally**: `bash scripts/update.sh` does
+> `git pull → reinstall skills → reinstall the bundle from npm` in one step.
+> The production profile uses the published `@fakechris/dsh-restart-recover`
+> artifact, never a checkout whose ignored `lib/` can be cleaned away.
 
 ```sh
 # Every update afterwards
@@ -255,6 +255,8 @@ cd dsh-harness-ops && bash scripts/update.sh
 repo/relink/build commands), `web.port` (staging smoke port, default 3081),
 `web.productionPort` (default 3080), `web.smokeClientIds` (client-manifest assertion),
 **`acceptance`** (acceptance switch, below).
+The example also lists `dsh-restart-recover` as an npm extension, so every new
+candidate slot installs the published artifact instead of repairing only the current slot.
 
 ### Acceptance mode switch (`acceptance`)
 

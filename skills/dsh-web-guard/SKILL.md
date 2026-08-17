@@ -93,18 +93,16 @@ tail /tmp/dsh-web-guard.log                     # 应见 "port free — starting
 - 检测会话最后 turn 是 `interrupted` → 自动注入续接消息（含"结果未知的工具调用先核查、只读/幂等才重试"纪律）
 - agent 带着 `TOOL_OUTCOME_UNKNOWN` 上下文自动继续 —— **用户零输入**
 
-安装（官方 bundle 通道，`dsh.bundle.patch` 格式）：
+生产安装（官方 bundle 通道，`dsh.bundle.patch` 格式）：
 
 ```sh
-# 官方安装：bundle 走 dsh plugin（产物经 prepare 构建，DSH_SOURCE 指向当前槽）
-cd plugins/dsh-restart-recover
-DSH_SOURCE=/Users/chris/.dsh/source/current npm run prepare   # 生成 lib/
-dsh plugin --profile web add .                                 # 在包目录内 add .（官方 bundle 安装）
+# 使用 npm 发布物；tarball 自带 lib/，不会依赖本地 checkout 的忽略文件
+dsh plugin --profile web add @fakechris/dsh-restart-recover@0.2.1
 ```
 
-> 官方规范要点（对照 make-dsh-plugin）：bundle 插件的 `dependencies` **声明为空是设计**——
-> `@deepseek-ai/*` 官方包由 profile 的 pnpm 闭包注入（repository 插件才声明，两类相反）；
-> 产物不入库靠 `prepare` 脚本构建（git 源安装时 pnpm 自动跑）。
+> 不要在生产 profile 中运行 `dsh plugin --profile web add .`。本地路径会被 pnpm
+> 持久化为 `link:`；仓库的 `lib/` 是忽略产物，一旦被清理，下次启动就会因缺少
+> `lib/index.js` 失败。本地路径安装只用于插件开发，且必须先执行 `npm run prepare`。
 
 配置（`config.resumeAutoContinue`，均可省略）：
 - `enabled`（默认 true）

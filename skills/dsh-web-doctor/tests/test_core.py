@@ -244,6 +244,46 @@ class ClientBundleDetectorTest(unittest.TestCase):
             shutil.rmtree(base, ignore_errors=True)
 
 
+class BrowserIncidentRegressionTest(unittest.TestCase):
+    """The dsh-track incident, as a fixture: HTTP 200 page whose client code
+    throws 'process is not defined' and logs 'Failed to load plugins'. The
+    browser probe must FAIL (never PASS on HTTP 200 alone) and name the plugin."""
+
+    def test_http_200_with_broken_client_is_fail(self):
+        import http.server
+        import socketserver
+        import threading
+        import subprocess
+
+        html = (Path(__file__).resolve().parent / "fixtures" / "broken-page.html").read_text()
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html")
+                self.end_headers()
+                self.wfile.write(html.encode())
+            def log_message(self, *_args):
+                pass
+
+        with socketserver.TCPServer(("127.0.0.1", 0), Handler) as srv:
+            port = srv.server_address[1]
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            probe = subprocess.run(
+                ["node", str(SCRIPTS_DIR / "browser-health.mjs"),
+                 "--url", f"http://127.0.0.1:{port}/", "--budget-ms", "8000"],
+                capture_output=True, text=True, timeout=60,
+            )
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        payload = json.loads(probe.stdout)
+        self.assertEqual(payload["status"], "FAIL")
+        self.assertTrue(any("dsh-track" in name for name in payload["failedPlugins"]),
+                        payload["failedPlugins"])
+        self.assertTrue(
+            any("process is not defined" in line or "Failed to load" in line for line in payload["evidence"]),
+            payload["evidence"])
+
+
 class ReportTest(unittest.TestCase):
     def test_write_report_roundtrip(self):
         with tempfile.TemporaryDirectory() as home:

@@ -307,11 +307,17 @@ def detect_launcher(ctx: RunContext) -> list[CheckResult]:
     if os.path.isfile(bin_dsh) and os.access(bin_dsh, os.X_OK):
         return [CheckResult("slots.launcher", CheckStatus.PASS, Severity.INFO, f"slot launcher present: {bin_dsh}")]
     if os.path.isfile(cli_js):
-        return [CheckResult("slots.launcher", CheckStatus.PASS, Severity.INFO, f"compiled CLI entry present: {cli_js}")]
+        # Bootable through the compiled CLI entry, but the launcher is
+        # missing: materializing bin/dsh keeps every dsh surface uniform and
+        # is exactly what fix_launcher_missing repairs.
+        return [CheckResult(
+            "slots.launcher", CheckStatus.FAIL, Severity.WARNING,
+            f"no bin/dsh launcher (compiled CLI entry present at {cli_js})",
+            fix_id="launcher.missing", safe_auto_fix=True,
+        )]
     return [CheckResult(
         "slots.launcher", CheckStatus.FAIL, Severity.ERROR,
         f"current slot has no bootable launcher ({bin_dsh} or {cli_js})",
-        fix_id="launcher.missing", safe_auto_fix=True,
     )]
 
 

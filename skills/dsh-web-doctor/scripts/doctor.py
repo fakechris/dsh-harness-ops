@@ -161,10 +161,18 @@ def main(argv: list[str] | None = None) -> int:
                 continue
             if not check.safe_auto_fix or check.fix_id is None:
                 continue
+            # Web relaunch is opt-in via --restart (legacy --fix semantics);
+            # the --restart branch below owns the web.down fixer.
+            if check.fix_id == "web.down":
+                continue
             attempt = core.apply_fix(ctx, check)
             if attempt is not None:
                 attempts.append(attempt)
                 say(ctx, f"  {check.fix_id}: {'resolved' if attempt.resolved is True else 'NOT resolved'}")
+        # Refresh the full diagnosis so the report reflects the post-fix state
+        # (repair attempts remain recorded with their own verification).
+        checks = core.run_all_detectors(ctx)
+        health = core.aggregate_health(checks)
 
     # ── restart (--restart) ───────────────────────────────────────────────────
     if args.restart:

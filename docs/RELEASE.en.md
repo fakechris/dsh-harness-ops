@@ -106,14 +106,14 @@ component uses its own mechanism:
 | Component | Type | Distribution/install | Update action |
 |---|---|---|---|
 | `skills/dsh-snapshot-ab`, `dsh-web-guard`, `dsh-session-recovery` | skill | copy into `~/.dsh/skills/` (official scan dir) | re-copy via `install.sh` |
-| `plugins/dsh-restart-recover` | bundle | `dsh plugin --profile web add .` (pnpm link + bundle register) | `update.sh` rebuilds lib + re-adds |
+| `plugins/dsh-restart-recover` | bundle | `dsh plugin --profile web add @fakechris/dsh-restart-recover@<version>` (published npm artifact) | `update.sh` reinstalls from npm |
 
-The bundle ships a `prepare` script (`node scripts/dsh-env.mjs tsc -p tsconfig.json`),
-so **a git fetch of sources rebuilds lib/ automatically** — exactly the official
-git-install requirement. Skills need no build.
+The npm tarball includes `lib/`. Production profiles do not use a local `link:`,
+so cleaning ignored checkout artifacts cannot prevent `dsh web` from starting.
+The `prepare` script remains for plugin development and pre-publish builds. Skills need no build.
 
 **`bash scripts/update.sh` does the whole update in one command**:
-`git pull --ff-only → rebuild plugin lib → re-run install.sh`.
+`git pull --ff-only → re-run install.sh → reinstall the bundle from npm`.
 
 ### 2.2 Versioning
 

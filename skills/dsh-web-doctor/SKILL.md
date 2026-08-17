@@ -209,6 +209,16 @@ doctor 是**最后一道防线**，它自己不能依赖"可能已经被弄坏�
 **设计契约**：doctor 的 L0 路径**绝不 import 任何 `@deepseek-ai/*` 编译包、绝不加载扩展插件**。
 L1 只是增强，加载不了就降级——救火工具必须在自己要修的故障里也活着。
 
+**结构化核心（2026-08-17 起）**：`doctor.sh` 是薄入口，逻辑在
+`doctor_core.py`（结构化 CheckResult：PASS/FAIL/UNKNOWN + severity + fix_id +
+evidence；12 个独立 detector；每个 finding 只调用自己的 fixer；修复后重跑关联
+detector 验收，PASS 才转 resolved；`$TMPDIR/dsh-doctor-<uid>-<pid>-<random>/`
+私有 run 目录）。`--diag-json` 输出纯 JSON；浏览器验收走真实无头 Chromium
+（`browser-health.mjs`：HTTP 200 不算健康——监听 pageerror/error console/
+Failed to load plugins，浏览器不可用 → UNKNOWN 而非 PASS）；客户端 bundle 纯度
+（`client-bundle-check.mjs`：process.env / __dirname / __filename /
+require("node:...")，即 dsh-track `process is not defined` 事故）。
+
 ## 自愈 prompt（web 恢复后 / 给其它 agent）
 
 `dsh-doctor --agent` 已内置完整自愈 prompt 并自动调 headless LLM。以下文本用于**没有

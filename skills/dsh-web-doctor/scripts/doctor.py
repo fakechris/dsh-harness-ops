@@ -213,12 +213,15 @@ def main(argv: list[str] | None = None) -> int:
         problems_path = os.path.join(ctx.run_dir, "tui-problems.json")
         with open(problems_path, "w") as handle:
             json.dump(build_problems_payload(ctx, checks), handle)
-        tui = os.path.join(ctx.scripts_dir, "doctor-tui.py")
+        # PR 4: the event-driven TUI (doctor_tui.py) replaces the legacy
+        # curses surface; it drives the controller itself, so only the run dir
+        # is passed for diagnostics.
+        tui = os.path.join(ctx.scripts_dir, "doctor_tui.py")
         if os.path.isfile(tui):
             say(ctx, f"deterministic diagnosis finished — {len([c for c in checks if c.status is core.CheckStatus.FAIL])} problem(s); launching TUI")
-            subprocess.run(["python3", tui, "--problems-json", problems_path], check=False)
+            subprocess.run(["python3", tui], check=False)
         else:
-            say(ctx, "doctor-tui.py missing — falling back to text report")
+            say(ctx, "doctor_tui.py missing — falling back to text report")
             print(report_text)
         return 0
     print(report_text, end="")

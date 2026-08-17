@@ -176,6 +176,7 @@ class RunContext:
                 dir=base,
             )
         self.run_dir = run_dir
+        os.makedirs(self.run_dir, exist_ok=True)
         os.chmod(self.run_dir, 0o700)
         self.report_path = os.path.join(self.run_dir, "report.txt")
         self.diag_json_path = os.path.join(self.run_dir, "diag.json")

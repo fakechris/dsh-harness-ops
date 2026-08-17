@@ -85,11 +85,15 @@ try { pkg = JSON.parse(readFileSync(manifest, 'utf8')) } catch {
   process.exit(2)
 }
 
-// Node-only patterns. process.env is the incident; the rest are the plan's
-// minimum set. Matches are reported with a short snippet for evidence.
+// Node-only patterns. process.env is the incident (client.js threw
+// "process is not defined"); __dirname/__filename are module path globals.
+// require( alone is NOT a leak: bundlers legitimately emit `require(...)`
+// shims for CJS interop in client output, so only `require("node:...")`
+// builtins (never valid in a browser bundle) are flagged. Matches are
+// reported with a short snippet for evidence.
 const LEAK_PATTERNS = [
   { kind: 'process.env', re: /process\.env\b/g },
-  { kind: 'require', re: /(?:^|[^.\w])require\s*\(/g },
+  { kind: 'require(node:)', re: /require\s*\(\s*['"]node:/g },
   { kind: '__dirname', re: /__dirname\b/g },
   { kind: '__filename', re: /__filename\b/g },
 ]

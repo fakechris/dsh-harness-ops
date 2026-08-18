@@ -193,7 +193,14 @@ class DoctorController:
             self._emit("message", {"generation": self.instruction_generation, "text": text})
             if self._agent is None:
                 self.start_agent()
+            # The worker may be mid-creation (single-flight): never drop the
+            # user's message — wait, bounded, for the agent to exist.
+            deadline = time.monotonic() + 30
+            while self._agent is None and self.agent_state is AgentState.STARTING \
+                    and time.monotonic() < deadline:
+                time.sleep(0.1)
             if self._agent is None:
+                self._set_agent(AgentState.FAILED, detail="agent did not start in time")
                 return
             if self.agent_state is AgentState.RUNNING:
                 self._set_agent(AgentState.CANCELLING)

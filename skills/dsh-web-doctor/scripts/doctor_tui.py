@@ -371,7 +371,13 @@ class DoctorTui:
         elif event_type == "turn/end":
             data = event.get("data", {}) if isinstance(event.get("data"), dict) else {}
             reason = data.get("reason", {})
-            self.renderer.add(f"[turn end] {reason.get('kind', '?') if isinstance(reason, dict) else reason}")
+            detail = ""
+            if isinstance(reason, dict):
+                kind = reason.get("kind", "?")
+                if kind == "error":
+                    err = reason.get("error", {})
+                    detail = f" {err.get('code', '')} {err.get('message', '')}".strip() if isinstance(err, dict) else f" {err}"
+            self.renderer.add(f"[turn end] {reason.get('kind', '?') if isinstance(reason, dict) else reason}{detail}")
 
     def _restore_terminal(self) -> None:
         # Terminal restoration is entirely owned by curses.wrapper's

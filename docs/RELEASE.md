@@ -88,12 +88,12 @@ npm registry 现状：`@deepseek-ai/*` scope 在 npm 上**无任何包**（`npm 
 | 组件 | 类型 | 分发/安装机制 | 更新动作 |
 |---|---|---|---|
 | `skills/dsh-snapshot-ab`、`dsh-web-guard`、`dsh-session-recovery` | skill | 目录复制到 `~/.dsh/skills/`（官方扫描目录） | `install.sh` 重拷 |
-| `plugins/dsh-restart-recover` | bundle 插件 | `dsh plugin --profile web add .`（pnpm link + bundle 注册） | `update.sh` 重建 lib + 重装 |
+| `plugins/dsh-restart-recover` | bundle 插件 | `dsh plugin --profile web add @fakechris/dsh-restart-recover@<version>`（npm 发布物） | `update.sh` 从 npm 重装 |
 
-bundle 插件自带 `prepare` 脚本（`node scripts/dsh-env.mjs tsc -p tsconfig.json`），
-**git 拉源码后自动构建 lib/** —— 这正是官方 git 直装的要求。skills 无需构建。
+bundle 插件的 npm tarball 自带 `lib/`。生产 profile 不使用本地 `link:`，避免仓库清理
+忽略产物后导致 `dsh web` 无法启动。`prepare` 脚本保留给插件开发和发布前构建；skills 无需构建。
 
-**`bash scripts/update.sh` 一条命令完成全部更新**：`git pull --ff-only → 重建插件 lib → 重跑 install.sh`。
+**`bash scripts/update.sh` 一条命令完成全部更新**：`git pull --ff-only → 重跑 install.sh → 从 npm 重装 bundle`。
 
 ### 2.2 版本号管理
 

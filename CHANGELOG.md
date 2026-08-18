@@ -46,6 +46,10 @@ Each entry links its squash-merged PR.
 - Tests: 40+ unit/integration/PTY tests including the dsh-track incident
   regression fixture (HTTP 200 + `process is not defined` + failed plugin
   load → probe FAIL naming the plugin and bundle).
+- `fix(install)`: production profiles install the published
+  `@fakechris/dsh-restart-recover` artifact instead of a local `link:`. This
+  keeps `lib/index.js` owned by the installed tarball, so cleaning ignored
+  checkout outputs cannot put `dsh web` into a permanent restart loop.
 
 ## [0.3.2] — 2026-08-14
 

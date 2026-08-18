@@ -213,7 +213,7 @@ bash skills/dsh-web-guard/scripts/install.sh
 #   不会再把端口误判为"被占用"，web 死后守护必定拉起
 
 # 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
-# 通常只需确认 ab-config.json 里的 extensions（扩展仓库路径）与 web 端口
+# 通常只需确认 ab-config.json 里的 extensions（包括 dsh-restart-recover）与 web 端口
 vi ~/.dsh/source/ab-config.json
 
 # 验证
@@ -224,9 +224,9 @@ $AB status
 > bundle 插件 `@fakechris/dsh-restart-recover` 已发 **npm**（官方立场见
 > [`docs/RELEASE.md`](docs/RELEASE.md)）。版本 = 根目录 `VERSION` + git tag `vX.Y.Z` +
 > [`CHANGELOG.md`](CHANGELOG.md)（SemVer）。
-> **更新不需要手工打包**：`bash scripts/update.sh` 一条命令完成
-> `git pull → 重建插件 lib → 重装 skills/bundle`（v0.3.2 起自动解析工具链槽位 +
-> 自愈插件构建软链，轮换到 npm profile 布局槽位不再断链）。
+> **更新不需要本地构建插件**：`bash scripts/update.sh` 一条命令完成
+> `git pull → 重装 skills → 从 npm 重装 bundle`。生产 profile 固定使用已发布的
+> `@fakechris/dsh-restart-recover`，不会再链接仓库中可能被清理的 `lib/`。
 
 ```sh
 # 之后每次更新
@@ -236,6 +236,7 @@ cd dsh-harness-ops && bash scripts/update.sh
 `ab-config.json` 关键字段：`upstream`（官方仓库）、`extensions[]`（扩展列表：repo/relink/构建命令）、
 `web.port`（staging 冒烟端口，默认 3081）、`web.productionPort`（默认 3080）、
 `web.smokeClientIds`（client-manifest 断言）、**`acceptance`**（验收开关，见下）。
+示例把 `dsh-restart-recover` 也列为 npm 扩展，保证新候选槽安装正式包，而不是只修当前槽。
 
 ### 验收模式开关（`acceptance`）
 

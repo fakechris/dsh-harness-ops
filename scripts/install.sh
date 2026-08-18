@@ -2,11 +2,11 @@
 # dsh-harness-ops installer — one command to install (or re-install) this
 # toolbox on a machine:
 #   1. copies the four skills into ~/.dsh/skills (the default scan dir),
-#   2. installs the dsh-restart-recover bundle into the `web` profile
-#      (via `dsh plugin add`, the official pnpm-backed mechanism),
+#   2. installs the published dsh-restart-recover bundle into the `web`
+#      profile (via `dsh plugin add`, the official pnpm-backed mechanism),
 #   3. prints a hint for the optional web-guard daemon.
-# Idempotent — safe to re-run after every update. Distribution unit is this
-# git checkout; there is no npm publish (see docs/RELEASE.md).
+# Idempotent — safe to re-run after every update. Skills come from this git
+# checkout; the bundle is a separately published npm artifact.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -29,24 +29,28 @@ done
 [ "$installed" = "1" ] || { echo "error: no skills found in $ROOT/skills"; exit 1; }
 
 # --- 2) bundle plugin into the web profile -----------------------------------
-PLUGIN="$ROOT/plugins/dsh-restart-recover"
-if [ -d "$PLUGIN" ]; then
+PLUGIN_PACKAGE="@fakechris/dsh-restart-recover"
+PLUGIN_MANIFEST="$ROOT/plugins/dsh-restart-recover/package.json"
+if [ -f "$PLUGIN_MANIFEST" ]; then
   if ! command -v dsh >/dev/null 2>&1; then
     echo "  warn: 'dsh' not on PATH — skipping profile bundle install (skills are installed)"
   else
-    echo "  bundle: installing $PLUGIN into the web profile (pnpm-backed)..."
-    # first install/build the plugin's own deps, then let `dsh plugin add`
-    # (which forwards to pnpm in the profile dir) register the bundle layer.
-    ( cd "$PLUGIN" && pnpm install --frozen-lockfile >/dev/null 2>&1 || pnpm install >/dev/null 2>&1 )
-    if ( cd "$PLUGIN" && dsh plugin --profile web add . ) >/tmp/dsh-harness-ops-plugin.log 2>&1; then
-      echo "  bundle -> web profile: @fakechris/dsh-restart-recover"
+    PLUGIN_VERSION=$(sed -n 's/^[[:space:]]*"version": "\([^"]*\)".*/\1/p' "$PLUGIN_MANIFEST" | head -1)
+    [ -n "$PLUGIN_VERSION" ] || { echo "error: cannot read bundle version from $PLUGIN_MANIFEST"; exit 1; }
+    PLUGIN_SPEC="$PLUGIN_PACKAGE@$PLUGIN_VERSION"
+    echo "  bundle: installing $PLUGIN_SPEC into the web profile (registry artifact)..."
+    # A local path makes pnpm persist a link: dependency. Its ignored lib/
+    # output can disappear after a clean and then prevent dsh web from booting.
+    # The published tarball owns lib/, so production profiles use it directly.
+    if dsh plugin --profile web add "$PLUGIN_SPEC" >/tmp/dsh-harness-ops-plugin.log 2>&1; then
+      echo "  bundle -> web profile: $PLUGIN_SPEC"
     else
-      echo "  warn: 'dsh plugin --profile web add .' failed (see /tmp/dsh-harness-ops-plugin.log)"
-      echo "        if the bundle is already linked, this is fine; check with: dsh plugin --profile web ls"
+      echo "  warn: 'dsh plugin --profile web add $PLUGIN_SPEC' failed (see /tmp/dsh-harness-ops-plugin.log)"
+      echo "        check the registry and profile with: dsh plugin --profile web ls"
     fi
   fi
 else
-  echo "  warn: plugin dir missing: $PLUGIN"
+  echo "  warn: plugin manifest missing: $PLUGIN_MANIFEST"
 fi
 
 # --- 3) one-command doctor entry on PATH -------------------------------------

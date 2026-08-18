@@ -120,14 +120,27 @@ class DoctorController:
     # -- agent lifecycle ------------------------------------------------------
 
     def _default_agent(self):
-        from . import doctor_agent as agent  # noqa: E402
+        import doctor_agent as agent  # noqa: E402
+        # Acceptance/deployment seam: DSH_DOCTOR_AGENT_CMD overrides the
+        # automation process command line (e.g. a wrapper running a specific
+        # dsh build's automation profile) without touching the installed
+        # harness.
+        cmd = os.environ.get("DSH_DOCTOR_AGENT_CMD")
+        if cmd:
+            parts = cmd.split()
+            return agent.PersistentAgentClient(
+                self.ctx, session_id=self.agent_session_id, cwd=self.ctx.cwd,
+                dsh=parts[0], argv=parts + ["--profile", "automation"],
+            )
         return agent.PersistentAgentClient(
             self.ctx, session_id=self.agent_session_id, cwd=self.ctx.cwd,
         )
 
     def start_agent(self) -> None:
+        # Single-flight under the lock: the worker and a user message may both
+        # request the agent before either has assigned it.
         with self._lock:
-            if self._agent is not None:
+            if self._agent is not None or self.agent_state is AgentState.STARTING:
                 return
             self._set_agent(AgentState.STARTING)
             try:

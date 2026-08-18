@@ -166,16 +166,23 @@ class DoctorTui:
             self._saved_termios = None
         self._worker = threading.Thread(target=self._worker_loop, daemon=True, name="doctor-tui-worker")
         self._worker.start()
-        # Initial autonomous round happens off the draw path.
-        self.events.put(("task", self._initial_round))
 
     def _worker_loop(self) -> None:
         try:
-            self.controller.start_agent()
-            self._agent_client = self.controller._agent
+            # The agent is created lazily by the controller (first prompt or
+            # the initial autonomous round) — wait for it instead of racing
+            # the controller's own single-flight creation.
+            while self._agent_client is None and self.running:
+                self._agent_client = self.controller._agent
+                if self._agent_client is None:
+                    time.sleep(0.1)
             if self._agent_client is not None:
                 self._agent_subscription = self._agent_client.subscribe()
+            # The initial autonomous round (diagnosis, safe fixes, agent
+            # delegation) runs HERE — the worker — never in the draw thread
+            # (it contains multi-second detectors).
             self.controller.diagnose()
+            self.controller.autonomous_round()
         except Exception as error:  # noqa: BLE001
             self.events.put(("controller", controller.ControllerEvent("agent", {"state": "FAILED", "detail": str(error)})))
             return
@@ -192,9 +199,6 @@ class DoctorTui:
             self.events.put(("notification", item))
             if item.method == "session.status" and item.params.get("status") == "idle":
                 self.events.put(("task", self.controller.on_agent_idle))
-
-    def _initial_round(self) -> None:
-        self.controller.autonomous_round()
 
     # -- input ----------------------------------------------------------------
 

@@ -120,14 +120,27 @@ class DoctorController:
     # -- agent lifecycle ------------------------------------------------------
 
     def _default_agent(self):
-        from . import doctor_agent as agent  # noqa: E402
+        import doctor_agent as agent  # noqa: E402
+        # Acceptance/deployment seam: DSH_DOCTOR_AGENT_CMD overrides the
+        # automation process command line (e.g. a wrapper running a specific
+        # dsh build's automation profile) without touching the installed
+        # harness.
+        cmd = os.environ.get("DSH_DOCTOR_AGENT_CMD")
+        if cmd:
+            parts = cmd.split()
+            return agent.PersistentAgentClient(
+                self.ctx, session_id=self.agent_session_id, cwd=self.ctx.cwd,
+                dsh=parts[0], argv=parts + ["--profile", "automation"],
+            )
         return agent.PersistentAgentClient(
             self.ctx, session_id=self.agent_session_id, cwd=self.ctx.cwd,
         )
 
     def start_agent(self) -> None:
+        # Single-flight under the lock: the worker and a user message may both
+        # request the agent before either has assigned it.
         with self._lock:
-            if self._agent is not None:
+            if self._agent is not None or self.agent_state is AgentState.STARTING:
                 return
             self._set_agent(AgentState.STARTING)
             try:
@@ -180,7 +193,14 @@ class DoctorController:
             self._emit("message", {"generation": self.instruction_generation, "text": text})
             if self._agent is None:
                 self.start_agent()
+            # The worker may be mid-creation (single-flight): never drop the
+            # user's message — wait, bounded, for the agent to exist.
+            deadline = time.monotonic() + 30
+            while self._agent is None and self.agent_state is AgentState.STARTING \
+                    and time.monotonic() < deadline:
+                time.sleep(0.1)
             if self._agent is None:
+                self._set_agent(AgentState.FAILED, detail="agent did not start in time")
                 return
             if self.agent_state is AgentState.RUNNING:
                 self._set_agent(AgentState.CANCELLING)

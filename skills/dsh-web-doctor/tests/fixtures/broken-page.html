@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><title>fake web</title></head>
+<body><div id="app">rendered</div>
+<script>
+// Incident repro (2026-08): HTTP 200, plugin fails to load, client.js throws
+console.error("Failed to load plugins: dsh-track (bundle dsh-track/lib/client.js)");
+(function(){ var env = process.env.NODE_ENV; })();
+</script></body></html>

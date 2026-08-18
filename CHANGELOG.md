@@ -9,6 +9,43 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+### dsh-web-doctor structural rewrite (PRs 1–4)
+
+- **Deterministic core** (`scripts/doctor_core.py`): structured `CheckResult`
+  (PASS/FAIL/UNKNOWN + severity + evidence + fix_id), 12 detectors (env deps,
+  A/B slots + launcher, port, HTTP, browser acceptance, server plugin deps,
+  client bundle purity, session files, web.log, credentials chain, settings
+  YAML), precise fix mapping (each finding calls only its own fixer),
+  fixer-verification by re-running the associated detector, private per-run
+  report dirs (`$TMPDIR/dsh-doctor-<uid>-<pid>-<random>/`), and
+  HEALTHY/UNVERIFIED/UNHEALTHY aggregation — detector failures are UNKNOWN,
+  never PASS.
+- **CLI** (`scripts/doctor.py` + thin `doctor.sh`): diagnose / `--diag-json`
+  (pure JSON) / `--fix` (safe fixers, each verified, then full refresh) /
+  `--fix --restart` / `--fix-item` / `--guide` / `--agent` (headless one-shot
+  then full re-check).
+- **Browser acceptance** (`scripts/browser-health.mjs`): real headless
+  Chromium probe (page errors, error console, plugin load, render); HTTP 200
+  alone is never health; probe unavailable → UNKNOWN.
+- **Client bundle purity** (`scripts/client-bundle-check.mjs`): flags
+  `process.env` / `__dirname` / `__filename` / `require("node:...")` in web
+  plugin client bundles (the dsh-track `process is not defined` incident);
+  bundler `require()` shims are not false positives.
+- **Persistent automation agent** (`scripts/doctor_agent.py`): stdlib JSON-RPC
+  client over `dsh --profile automation` (session/prompt / session/cancel /
+  shutdown + notifications); one process, one session across turns.
+- **Conversation state machine** (`scripts/doctor_controller.py`): orthogonal
+  health/agent states; any user message switches to USER_DIRECTED (no keyword
+  classifier, no read-only constraint derived from problem counts), cancels a
+  running turn via session/cancel on the SAME session, and repairs resolve
+  only after re-checking; HEALTHY keeps the surface online.
+- **Event-driven TUI** (`scripts/doctor_tui.py`): curses thread only draws and
+  reads keys; agent notifications arrive from a worker; terminal sanitization
+  (CSI/OSC/DCS/C0 + invalid Unicode), bracketed paste, Ctrl-C interrupts the
+  agent not the TUI; no session-log tailing, no blocking I/O in the draw path.
+- Tests: 40+ unit/integration/PTY tests including the dsh-track incident
+  regression fixture (HTTP 200 + `process is not defined` + failed plugin
+  load → probe FAIL naming the plugin and bundle).
 - `fix(install)`: production profiles install the published
   `@fakechris/dsh-restart-recover` artifact instead of a local `link:`. This
   keeps `lib/index.js` owned by the installed tarball, so cleaning ignored

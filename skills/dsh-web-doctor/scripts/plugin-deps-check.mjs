@@ -47,7 +47,7 @@ function walk(dir, out = []) {
     if (e.name === 'node_modules') continue
     const p = join(dir, e.name)
     if (e.isDirectory()) walk(p, out)
-    else if (e.name.endsWith('.js') && e.name !== 'client.js' && !p.includes('/types/')) out.push(p)
+    else if (e.name.endsWith('.js') && !p.includes('/types/')) out.push(p)
   }
   return out
 }
@@ -88,7 +88,13 @@ function subpathResolves(baseDir, sub) {
   return existsSync(join(baseDir, sub))
 }
 
-/** Find a package dir under slot/packages whose package.json name matches. */
+/**
+ * Find a package dir whose package.json name matches.
+ * Two slot layouts are supported:
+ *   1. source-checkout slot: $SLOT/packages/<...> (walk the tree)
+ *   2. prepared slot:        $SLOT/profiles/node_modules/<spec> (pnpm-linked;
+ *      a prepared slot has no packages/ tree — e.g. slot-b bin/profiles/sessions)
+ */
 function findSlotPackage(spec) {
   const pkgs = join(SLOT, 'packages')
   const queue = [pkgs]
@@ -110,6 +116,11 @@ function findSlotPackage(spec) {
       }
     }
   }
+  const prof = join(SLOT, 'profiles', 'node_modules', spec)
+  try {
+    const d = JSON.parse(readFileSync(join(prof, 'package.json'), 'utf8'))
+    if (d.name === spec) return prof
+  } catch { /* not there — no fix source */ }
   return undefined
 }
 

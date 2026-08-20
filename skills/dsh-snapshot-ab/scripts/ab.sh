@@ -93,7 +93,7 @@ cmd_status() {
   done
   ab_log "phase: $phase  current-slot: ${cur:-<unset>}  confirmed: $confirmed"
   local wp
-  wp=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | head -2 | awk '{print $2, $9, $11, $12, $13}' | tr '\n' '; ')
+  wp=$(ps aux | grep -E '[b]in\.ts web|lib/[b]in\.js web' | head -2 | awk '{print $2, $9, $11, $12, $13}' | tr '\n' '; ')
   ab_log "running web: ${wp:-<none>}"
   if [ -f "$AB_CONFIG_FILE" ]; then
     ab_log "extensions:"
@@ -413,6 +413,11 @@ PY
   ab_ensure_slot_launcher_npm "$dir"
   # --- shared user data (sessions/storages @ ~/.dsh, not the slot) ----------
   ab_ensure_shared_userdata_patch "$dir"
+  # --- carry the user's key + model config from the CURRENT slot ------------
+  # so the candidate (and its staging smoke) runs with the same credentials
+  # the user is actually using; switch re-runs this to catch edits made
+  # between prepare and cutover (2026-08-20 incident: key lost on cutover).
+  ab_migrate_user_config "$(ab_slot_dir "$cur")" "$dir"
 
   # --- web smoke on a staging port ------------------------------------------
   local wport whost wtimeout
@@ -509,6 +514,10 @@ cmd_prepare_source() {
   # 20260811+ snapshots removed bin/dsh; without a slot launcher the chain
   # ~/.local/bin/dsh -> current/bin/dsh breaks after cutover. Materialize it.
   ab_ensure_slot_launcher "$dir"
+  # carry the user's key + model config from the CURRENT slot into the
+  # candidate (source checkout layout: settings.yaml/.credentials.yaml live in
+  # the slot root, same as npm slots).
+  ab_migrate_user_config "$(ab_slot_dir "$cur")" "$dir"
 
   # --- extensions (build + test against THIS candidate) --------------------
   local exts _e ev=()
@@ -679,6 +688,9 @@ cmd_switch() {
       ab_warn "  launcher chain will break: $dir has no bin/dsh and no lib/bin.js — run 'ab.sh prepare --slot $slot' to materialize the slot launcher"
     fi
   fi
+  # carry the user's key + model config from the slot being left into the
+  # new current (catches edits made between prepare and cutover).
+  ab_migrate_user_config "$prev_target" "$dir"
   ab_state_set --arg slot "$slot" --arg prev "$prev_slot" --arg prevtarget "$prev_target" --arg at "$at" --arg snap "$(ab_state_get '.candidateSnapshot')" '
     .current = $slot | .phase = "switched" | .confirmed = false
     | .lastSwitch = { at: $at, from: $prev, to: $slot, previousTarget: $prevtarget, snapshot: $snap }
@@ -712,7 +724,7 @@ cmd_confirm() {
   fi
   # the running process may reference the slot by its real path OR through the
   # `current` symlink (both mean "running the current slot's code").
-  proc=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | grep -E "$dir|$AB_SOURCE/current" | head -1 || true)
+  proc=$(ps aux | grep -E '[b]in\.ts web|lib/[b]in\.js web' | grep -E "$dir|$AB_SOURCE/current" | head -1 || true)
   if [ -n "$proc" ]; then
     ab_ok "  running web process from current slot $dir"
   else
@@ -757,11 +769,18 @@ cmd_rollback() {
   at=$(ab_now)
   ab_lock "rollback-$$" || ab_die "another A/B operation holds the lock"
   trap 'ab_unlock' EXIT
-  ab_log "ROLLBACK: current -> $prev_target"
+  # the slot being left (pre-rollback current) — captured BEFORE the
+  # repoint below, since ab_current_dir follows the symlink.
+  local leave_dir; leave_dir=$(readlink "$AB_SOURCE/current" 2>/dev/null || echo "$AB_CURRENT")
+  ab_log "ROLLBACK: current -> $prev_target (leaving $leave_dir)"
   ln -sfn "$prev_target" "$AB_SOURCE/current"
   [ "$(readlink "$AB_SOURCE/current")" = "$prev_target" ] || ab_die "symlink rollback failed"
   # shellcheck disable=SC2086
   $(ab_boot_cmd "$prev_target") --version >/dev/null 2>&1 || { ab_warn "launcher boot failed after rollback"; }
+  # carry the user's key + model config from the slot being left (the
+  # pre-rollback current) into the rollback target, so the rollback slot
+  # keeps the latest credentials/model config.
+  ab_migrate_user_config "$leave_dir" "$prev_target"
   # map the target back to a slot if it is one
   local slot="" s
   for s in a b; do
@@ -781,7 +800,7 @@ ab_restart_web() {
   ab_verify_relinks
   local port pid i code log cwd pids
   port=$(ab_config_get '.web.productionPort // 3080')
-  pids=$(ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | awk '{print $2}')
+  pids=$(ps aux | grep -E '[b]in\.ts web|lib/[b]in\.js web' | awk '{print $2}')
   if [ -n "$pids" ]; then
     ab_warn "  stopping running dsh web instance(s): $(printf '%s' "$pids" | tr '\n' ' ')"
     for pid in $pids; do kill -TERM "$pid" 2>/dev/null || true; done

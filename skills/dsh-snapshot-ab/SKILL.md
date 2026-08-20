@@ -52,6 +52,7 @@ description: >-
 - 状态：`$DSH_SOURCE/ab-state.json`（槽、快照、current、phase、confirmed、历史）。
 - 配置：`$DSH_SOURCE/ab-config.json`（upstream、扩展列表、web 冒烟参数）。
 - 扩展（如 dsh-track）在槽**之外**（`~/source/dsh-involute`），通过 node_modules 符号链接 + 生成的 `tsconfig.ab.json` + `DSH_SOURCE` 环境变量指向当前目标槽，因此可以"先对着 B 槽构建测试，再切换"。
+- **用户配置跟随 current**：`.credentials.yaml`（API key，由 dsh-credentials-local 管理）和 `settings.yaml`（模型选择 / UI 偏好）按槽隔离存放；`ab.sh` 在 prepare / switch / rollback 时自动从**当前槽**（用户正在用的）复制这两个文件到目标槽（`ab_migrate_user_config`），保证切换后 key 和模型配置不丢——2026-08-20 事故：rc.6→rc.8 切换丢了 key，用户被迫手动重配。
 
 ## 每日工作流
 

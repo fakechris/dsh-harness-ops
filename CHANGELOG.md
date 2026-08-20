@@ -9,6 +9,16 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+### A/B 槽用户配置迁移（key / 模型配置跟随 current）
+
+- `fix(ab)`: 槽级 `.credentials.yaml`（API key）和 `settings.yaml`（模型选择/UI 偏好）
+  不再在切换时丢失 —— prepare / switch / rollback 自动从 current 槽复制到目标槽
+  （`ab_migrate_user_config`），2026-08-20 rc.6→rc.8 切换丢 key 事故修复。
+- `fix(ab)`: npm 模式 web 进程匹配兼容 `profiles/node_modules/@deepseek-ai/dsh/lib/bin.js`
+  （原只匹配源码布局，confirm 误判生产进程缺失）。
+- `fix(ab)`: npm 模式 main clone 解析失败时从 `ab-state.json` 的 `mainClone` 兜底
+  （原 prepare 因解析不到主克隆直接拒绝执行）。
+
 ### dsh-web-doctor structural rewrite (PRs 1–4)
 
 - **Deterministic core** (`scripts/doctor_core.py`): structured `CheckResult`

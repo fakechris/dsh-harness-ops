@@ -57,6 +57,13 @@ ab_resolve_layout() {
     AB_MAIN="$(cd -- "$AB_MAIN" && pwd -P)"
   else
     AB_MAIN=""
+    # npm-distribution slots (20260814+) have no .git, so git-common-dir
+    # resolution above fails; fall back to the main clone recorded in the
+    # state file (git-backed helpers like notes/diff and cmd_prepare's
+    # main-clone guard still work).
+    if [ -f "$AB_SOURCE/ab-state.json" ]; then
+      AB_MAIN=$(jq -r '.mainClone // ""' "$AB_SOURCE/ab-state.json" 2>/dev/null || true)
+    fi
   fi
   AB_STATE_FILE="${AB_STATE_FILE:-$AB_SOURCE/ab-state.json}"
   AB_CONFIG_FILE="${AB_CONFIG_FILE:-$AB_SOURCE/ab-config.json}"
@@ -297,6 +304,33 @@ EOF
   ab_log "  shared user-data patch -> $dir/cordis.patch.yml (sessions/storages @ $home)"
 }
 
+# ab_migrate_user_config <from-slot-dir> <to-slot-dir>
+#   Carry the user's per-slot config across a cutover. AB slots are isolated
+#   DSH_HOMEs, so .credentials.yaml (API keys managed by dsh-credentials-local)
+#   and settings.yaml (model selection, UI prefs) do NOT follow `current` on
+#   their own — a switch/rollback silently starts the new slot with no key and
+#   no default model (2026-08-20 incident: the rc.6→rc.8 switch lost the key
+#   and the user had to re-enter it manually). Copy both files from the slot
+#   the user is LEAVING to the slot they are ENTERING, preserving owner-only
+#   permissions. Missing source files are skipped; existing targets are
+#   overwritten so the latest user config always wins. Never invoked on the
+#   current slot itself (both args differ by construction at every call site).
+ab_migrate_user_config() {
+  local from="$1" to="$2" f src dst
+  [ -d "$from" ] && [ -d "$to" ] || return 0
+  for f in .credentials.yaml settings.yaml; do
+    src="$from/$f"
+    dst="$to/$f"
+    if [ -f "$src" ]; then
+      cp -p "$src" "$dst" 2>/dev/null || ab_warn "  migrate $f: copy failed ($src -> $dst)"
+      chmod 600 "$dst" 2>/dev/null || true
+      ab_log "  user config $f -> $dst"
+    else
+      ab_log "  user config $f: no source at $src (skipped)"
+    fi
+  done
+}
+
 # ab_resolve_relink_target <slot_dir> <rel_value> <link_key>
 #   Resolve one ab-config relink against a slot, layout-aware. Two layouts
 #   coexist across slots (2026-08-14): the legacy monorepo layout
@@ -372,13 +406,16 @@ ab_git_clean() { # "$1" dir → true if no tracked modifications
 # ab_detect_web — list every running dsh web instance as "pid port" lines.
 # A second instance shares ~/.dsh (sessions/storages) with the production one;
 # booting one is only safe for short read-only inspection. Port defaults 3080.
-# Matches both launch styles: tsx source (apps/cli/src/bin.ts web) and the
-# compiled CLI (apps/cli/lib/bin.js web, 20260811+ production entry).
+# Matches all launch styles: tsx source (apps/cli/src/bin.ts web), the
+# compiled CLI (apps/cli/lib/bin.js web, 20260811+ production entry), and the
+# npm-distribution CLI (profiles/node_modules/@deepseek-ai/dsh/lib/bin.js web,
+# 20260814+ npm slots — the lib/bin.js web substring covers both compiled
+# layouts).
 # NB: avoid `grep | head` pipelines here — under `set -o pipefail` head's early
 # close SIGPIPEs grep and the command substitution fails (set -e aborts).
 ab_detect_web() {
   local line pid port
-  ps aux | grep -E '[b]in\.ts web|apps/cli/[l]ib/bin\.js web' | while IFS= read -r line; do
+  ps aux | grep -E '[b]in\.ts web|lib/[b]in\.js web' | while IFS= read -r line; do
     [ -n "$line" ] || continue
     pid=$(printf '%s\n' "$line" | awk '{print $2}')
     port=$(printf '%s\n' "$line" | sed -n 's/.*--port \([0-9][0-9]*\).*/\1/p')

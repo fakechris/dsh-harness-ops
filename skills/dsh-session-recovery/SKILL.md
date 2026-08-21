@@ -89,6 +89,15 @@ node scripts/repair-session-log.mjs --id <session-id>
 ⚠️ **绝不要**用系统 `zstd` CLI 重压 session 日志 —— 它默认整文件单帧，正好触发本事故。
 ⚠️ **绝不要**手工编辑 session 日志或改动文件里的行。
 
+另一种损坏形态（**同 seq 双写 / rewind**，读取器报同样的 `torn JSONL record`）：某个 seq 范围被写了两次、
+且两次内容不同（崩溃恢复时把尾部重写，而非前向 append + `surfaceOp:replace`）。用
+`repair-session-dedup.mjs` 修复，**默认 `--keep last` 保留后写（live）副本**，真正重复才用 `--keep first`：
+
+```sh
+node scripts/repair-session-dedup.mjs --id <session-id>            # 默认 --keep last
+node scripts/repair-session-dedup.mjs --id <session-id> --keep first  # 完全相同重复
+```
+
 ## 重启 + handoff（重中之重的纪律）
 
 修复后 workspace 索引仍为空，必须重启 `dsh web`。顺序：
@@ -138,4 +147,5 @@ node scripts/repair-session-log.mjs --id <session-id>
 - `scripts/validate-sessions.mjs` — 逐文件 header 校验。
 - `scripts/check-all-sessions.mjs` — 全量读取校验。
 - `scripts/repair-session-log.mjs` — 无损修复（通用化，按 id 或目录）。
+- `scripts/repair-session-dedup.mjs` — 修复同 seq 双写/rewind（`--keep last|first`，默认 last）。
 - `scripts/restart-dsh-web.sh` — 重启 + 验证。

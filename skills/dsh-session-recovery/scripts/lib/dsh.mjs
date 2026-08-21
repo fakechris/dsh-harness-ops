@@ -1,11 +1,16 @@
 /**
  * Shared helpers: resolve the DSH session persistence backend and load it
- * exactly as the running `dsh web` server uses it, across both install modes:
+ * exactly as the running `dsh web` server uses it, across all install modes:
  *
  *  - source checkout (A/B snapshots): `$DSH_HOME/source/current` → packages/
- *  - npm install (lib production):  `$DSH_HOME/profiles/node_modules` closure
+ *  - profile install under source:    `$DSH_HOME/source/current` → profiles/node_modules
+ *  - npm install (lib production):    `$DSH_HOME/profiles/node_modules` closure
+ *
+ * The persistence class was renamed across snapshots (`SessionPersistenceJsonl`
+ * in older builds, `JsonlSessionPersistence` in rc.1). We accept both so the
+ * diagnostic scripts work against whatever snapshot is currently linked.
  */
-import { readlinkSync, readdirSync } from 'node:fs'
+import { readlinkSync, readdirSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { createRequire } from 'node:module'
@@ -29,29 +34,39 @@ export function resolveSourceRoot() {
 
 export const defaultSessionsRoot = () => join(DSH_HOME, 'sessions')
 
-/** 源码 checkout 是否存在（A/B 快照机制的特征）。 */
-function hasSourceCheckout() {
-  try {
-    const current = join(DSH_HOME, 'source', 'current')
-    readlinkSync(current)
-    return true
-  } catch {
-    return false
-  }
+/** Absolute path to the package dir for an npm-scope package, or null. */
+function packageDir(baseNodeModules, pkgName) {
+  return join(baseNodeModules, ...pkgName.split('/'))
 }
 
 /**
- * 双路径解析 persistence 后端。判别以「是否有源码 checkout」为准：
- * 源码模式（A/B 快照）→ 源码 packages/；npm 安装（lib 生产）→ profile 闭包。
+ * Resolve the require handle + mode for an `@deepseek-ai/*` package.
+ * Tries, in order: source packages/, source profile closure, npm profile closure.
  */
-function persistenceRequire() {
-  if (hasSourceCheckout()) {
-    const sourceRoot = resolveSourceRoot()
-    const pkgDir = join(sourceRoot, 'packages', 'session', 'session-persistence-jsonl')
-    return { require: createRequire(join(pkgDir, 'package.json')), mode: 'source' }
+function resolvePkgRequire(pkgName, sourceRelPath) {
+  const current = join(DSH_HOME, 'source', 'current')
+  if (existsSync(current)) {
+    // 1) genuine source checkout: <current>/packages/<...>
+    const srcPkg = join(current, 'packages', ...sourceRelPath)
+    if (existsSync(join(srcPkg, 'package.json'))) {
+      return { require: createRequire(join(srcPkg, 'package.json')), mode: 'source' }
+    }
+    // 2) profile install under source (slot-a/slot-b): <current>/profiles/node_modules
+    const profBase = join(current, 'profiles', 'node_modules')
+    const profPkg = packageDir(profBase, pkgName)
+    if (existsSync(join(profPkg, 'package.json'))) {
+      return { require: createRequire(join(profPkg, 'package.json')), mode: 'profile' }
+    }
   }
-  const pkgDir = join(DSH_HOME, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-session-persistence-jsonl')
-  return { require: createRequire(join(pkgDir, 'package.json')), mode: 'npm' }
+  // 3) npm install (lib production): <DSH_HOME>/profiles/node_modules
+  const npmBase = join(DSH_HOME, 'profiles', 'node_modules')
+  const npmPkg = packageDir(npmBase, pkgName)
+  return { require: createRequire(join(npmPkg, 'package.json')), mode: 'npm' }
+}
+
+/** Resolve the persistence backend require handle. */
+function persistenceRequire() {
+  return resolvePkgRequire('@deepseek-ai/dsh-session-persistence-jsonl', ['session', 'session-persistence-jsonl'])
 }
 
 /** Public handle to the persistence backend's require (for frame-level tools). */
@@ -59,22 +74,13 @@ export function persistenceRequireHandle() {
   return persistenceRequire()
 }
 
-/**
- * 双路径解析 `@deepseek-ai/dsh-session` 的 require（repair 脚本 decodeStorageRecord 用）。
- * 判别与 persistenceRequire 一致：源码 checkout → 源码 packages/；npm → profile 闭包。
- */
+/** Resolve the `@deepseek-ai/dsh-session` require handle (decodeStorageRecord). */
 export function sessionRequire() {
-  if (hasSourceCheckout()) {
-    const sourceRoot = resolveSourceRoot()
-    const pkgDir = join(sourceRoot, 'packages', 'session', 'session-persistence-jsonl')
-    return createRequire(join(pkgDir, 'package.json'))
-  }
-  const pkgDir = join(DSH_HOME, 'profiles', 'node_modules', '@deepseek-ai', 'dsh-session')
-  return createRequire(join(pkgDir, 'package.json'))
+  return resolvePkgRequire('@deepseek-ai/dsh-session', ['session', 'dsh-session']).require
 }
 
 /**
- * Build a SessionPersistenceJsonl instance bound to the real session root.
+ * Build a persistence instance bound to the real session root.
  * Uses the COMPILED packages (lib/) so behaviour matches the running server.
  * Returns the resolved mode so callers can report which backend they used.
  */
@@ -89,10 +95,12 @@ export function loadPersistence(root = defaultSessionsRoot()) {
   } catch {
     ({ Context } = require('@deepseek-ai/cordis'))
   }
-  const { SessionPersistenceJsonl } = require('@deepseek-ai/dsh-session-persistence-jsonl')
+  const mod = require('@deepseek-ai/dsh-session-persistence-jsonl')
+  // Class renamed across snapshots: older builds used SessionPersistenceJsonl.
+  const Persistence = mod.JsonlSessionPersistence ?? mod.SessionPersistenceJsonl ?? mod.default
   const ctx = new Context()
   ctx.sessions = { list: () => [] } // no live sessions in a diagnostic context
-  const persistence = new SessionPersistenceJsonl(ctx, { root, compression: 'zstd' })
+  const persistence = new Persistence(ctx, { root, compression: 'zstd' })
   return { persistence, root, mode, sourceRoot: mode === 'source' ? resolveSourceRoot() : undefined }
 }
 

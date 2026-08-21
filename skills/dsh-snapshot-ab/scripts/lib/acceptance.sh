@@ -120,7 +120,7 @@ acc_build() {
 #   Returns 0 if the server answered every smoke path.
 acc_web_smoke() {
   local dir="$1" port="$2" host="$3" timeout="$4" keep="${5:-0}" approval="${6:-0}"
-  local log pid i code p allok=1 ws_arg
+  local log pid i code p allok=1 ws_arg iso
   # port must be free before booting a staging instance
   if lsof -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
     ab_err "port $port already in use — pick a free staging port (config web.port)"
@@ -134,6 +134,12 @@ acc_web_smoke() {
     fi
   fi
   log="$(mktemp -t dsh-ab-smoke.XXXXXX).log"
+  # isolate the second instance's session/storage writes to a throwaway dir so
+  # it can never touch the shared ~/.dsh production state (2026-08-21 incident).
+  if ! iso="$(ab_stage_isolation_patch)"; then
+    ab_err "failed to create staging isolation patch"
+    return 1
+  fi
   # --workspace-root exists on some snapshots and was removed on others; ask the
   # candidate's own CLI before passing it (acceptance must not assume flags).
   ws_arg=""
@@ -143,7 +149,7 @@ acc_web_smoke() {
   else
     ab_warn "  candidate's dsh web has no --workspace-root flag; smoke without it"
   fi
-  ab_log "smoke: $(ab_boot_cmd "$dir") web --port $port (log $log)"
+  ab_log "smoke: $(ab_boot_cmd "$dir") --profile web --patch $iso/cordis.patch.yml --port $port (log $log)"
   # npm-distribution slots are isolated DSH_HOMEs: their profiles live under
   # <slot>/profiles, so the booted web must see DSH_HOME=<slot-dir> or it would
   # load the USER-level ~/.dsh profile (and any source-linked extensions in it).
@@ -154,7 +160,7 @@ acc_web_smoke() {
     ab_log "  npm slot: DSH_HOME=$dir"
   fi
   # shellcheck disable=SC2086
-  ( cd "$dir" && nohup env $env_prefix $(ab_boot_cmd "$dir") web --port "$port" --host "$host" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
+  ( cd "$dir" && nohup env $env_prefix $(ab_boot_cmd "$dir") --profile web --patch "$iso/cordis.patch.yml" --no-open --host "$host" --port "$port" $ws_arg >"$log" 2>&1 & echo $! > "$log.pid" )
   pid=$(cat "$log.pid")
   i=0
   while [ "$i" -lt "$timeout" ]; do
@@ -194,7 +200,7 @@ acc_web_smoke() {
     done
   fi
   if [ "$keep" = "1" ]; then
-    ab_log "keeping staging server on http://$host:$port (pid $pid, log $log) for manual review"
+    ab_log "keeping staging server on http://$host:$port (pid $pid, log $log, isolation dir $iso) for manual review"
   else
     # TERM first, then force-free the port (node may drain slowly on SIGTERM)
     kill "$pid" 2>/dev/null || true
@@ -207,6 +213,7 @@ acc_web_smoke() {
       lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null | xargs kill -9 2>/dev/null || true
       sleep 1
     fi
+    rm -rf "$iso" 2>/dev/null || true
   fi
   [ "$allok" = "1" ]
 }

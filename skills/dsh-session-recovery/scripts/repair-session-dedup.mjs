@@ -5,13 +5,17 @@
  * reader throw "corrupt Zstandard session log: complete frame contains a torn
  * JSONL record".
  *
- * Strategy: decode the whole stream to events, drop the SECOND (duplicate)
- * occurrence of any seq that already appeared (keeping the first, which is what
- * the reader commits), then re-frame the corrected rows with DSH's own
- * compressor and validate with the real reader before swapping in place.
+ * Strategy: decode the whole stream to events and collapse the duplicate seq
+ * range. A duplicate seq appears when the same range is written twice — either
+ * as a genuine duplicate write (identical events) or, more often, as a
+ * crash-recovery REWIND where the harness re-wrote the tail with DIFFERENT
+ * events at the same seqs. For a rewind the LATER write is the live version, so
+ * the default keeps the LAST occurrence of each seq (`--keep last`); `--keep
+ * first` keeps the earliest instead. Then re-frame the corrected rows with DSH's
+ * own compressor and validate with the real reader before swapping in place.
  *
  * Usage:
- *   node repair-session-dedup.mjs --id <session-id> [--dry-run]
+ *   node repair-session-dedup.mjs --id <session-id> [--dry-run] [--keep last|first]
  *   node repair-session-dedup.mjs --dir <path>     [--dry-run]
  *   [--root <sessions-root>] [--backup-dir <dir>] [--lines-per-frame N]
  *
@@ -37,10 +41,12 @@ const { values } = parseArgs({
     root: { type: 'string' },
     'backup-dir': { type: 'string' },
     'lines-per-frame': { type: 'string' },
+    'keep': { type: 'string', default: 'last' },
     'dry-run': { type: 'boolean', default: false },
   },
 })
 const linesPerFrame = Number(values['lines-per-frame'] ?? 200)
+const keep = values.keep === 'first' ? 'first' : 'last'
 
 function fail(msg) {
   console.error(`ABORT: ${msg}`)
@@ -138,8 +144,22 @@ if (header.type !== 'session' || header.id !== EXPECTED_ID) {
 }
 console.log(`header OK: id=${header.id} cwd=${header.cwd ?? '(none)'} createdAt=${new Date(header.createdAt).toISOString()}`)
 
-// --- 2. decode rows, keep first occurrence of each seq ----------------------
-const seen = new Set()
+// --- 2. decode rows, pick one occurrence of each seq -----------------------
+// A seq appearing more than once is a duplicate write. For a crash-recovery
+// REWIND the LATER copy is live, so `keep=last` (default) wins; `keep=first`
+// wins for a genuine identical duplicate. We build a seq -> (row,eventIndex)
+// map of the chosen occurrence, then keep a row byte-identical iff every event
+// it carries is the chosen occurrence (dropping fully-shadowed rows).
+const chosen = new Map()   // seq -> {r, ei}
+for (let r = 1; r < lines.length; r++) {
+  let events
+  try { events = decodeStorageRecord(JSON.parse(lines[r])) } catch { fail(`row ${r + 1} failed to decode: ${lines[r].slice(0, 120)}`) }
+  for (let ei = 0; ei < events.length; ei++) {
+    const seq = events[ei].seq
+    if (keep === 'first') { if (!chosen.has(seq)) chosen.set(seq, { r, ei }) }
+    else chosen.set(seq, { r, ei })
+  }
+}
 let dupRemoved = 0
 let totalEvents = 0
 let lastSeq = -1
@@ -147,22 +167,19 @@ const newRows = [lines[0]]   // header row, byte-identical
 for (let r = 1; r < lines.length; r++) {
   let events
   try { events = decodeStorageRecord(JSON.parse(lines[r])) } catch { fail(`row ${r + 1} failed to decode: ${lines[r].slice(0, 120)}`) }
-  // Partition this row's events into duplicates (already seen) vs new.
-  const keep = []
-  let allDup = true
-  for (const ev of events) {
-    if (seen.has(ev.seq)) { dupRemoved++; continue }
-    seen.add(ev.seq); keep.push(ev); allDup = false
+  const keepIdx = []
+  for (let ei = 0; ei < events.length; ei++) {
+    const c = chosen.get(events[ei].seq)
+    if (c && c.r === r && c.ei === ei) keepIdx.push(ei)
+    else dupRemoved++
   }
-  if (allDup) continue                       // whole row was a duplicate — drop it
-  if (keep.length === events.length) {
-    newRows.push(lines[r])                    // untouched row — keep byte-identical
-  } else {
-    // Straddling row (part dup, part new): emit the new events as individual rows.
-    for (const ev of keep) newRows.push(JSON.stringify(ev))
-    console.log(`  split straddling row ${r + 1}: kept ${keep.length} of ${events.length} events`)
+  if (keepIdx.length === 0) continue                     // fully shadowed row — drop it
+  if (keepIdx.length === events.length) newRows.push(lines[r])   // keep byte-identical
+  else {                                                  // straddling row — emit chosen events
+    for (const ei of keepIdx) newRows.push(JSON.stringify(events[ei]))
+    console.log(`  split straddling row ${r + 1}: kept ${keepIdx.length} of ${events.length} events`)
   }
-  for (const ev of keep) totalEvents++
+  for (const ei of keepIdx) totalEvents++
 }
 
 // --- 3. assert the deduped stream is contiguous ----------------------------
@@ -174,7 +191,7 @@ for (let i = 0; i < newRows.length - 1; i++) {
   }
 }
 if (lastSeq + 1 !== totalEvents) fail(`event count mismatch: contiguous run has seq up to ${lastSeq} (${lastSeq + 1} events) but total ${totalEvents}`)
-console.log(`dedup removed ${dupRemoved} duplicate events; contiguous stream: ${totalEvents} events (seq 0..${lastSeq})`)
+console.log(`dedup (keep=${keep}) removed ${dupRemoved} shadowed events; contiguous stream: ${totalEvents} events (seq 0..${lastSeq})`)
 
 if (dupRemoved === 0) {
   console.log('no duplicates found — nothing to repair (content already contiguous)')

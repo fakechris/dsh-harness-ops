@@ -461,9 +461,14 @@ $AB stage --slot a --port 3082 --keep --yes   # background (nohup); stop with th
 - **Requires explicit `--yes`** confirmation before starting; without `--yes` it refuses and exits;
 - Target port taken → errors out, telling you to change `--port`;
 - `--keep` runs in background and prints the log path and stop command
-  (`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`).
+  (`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`);
+- **Session/storage isolation**: the temp instance boots with `--patch <throwaway cordis.patch.yml>`
+  redirecting `session-persistence-jsonl.root` and `storage-json.root` to a throwaway temp dir, so it
+  can never write the production `~/.dsh` sessions/storages (2026-08-21 incident: a prepare-stage
+  second instance rewrote an active session's tail → seq rewind the reader rejects).
 
-⚠️ During a temporary instance: **read-only**, don't run writes concurrently, close it when done.
+⚠️ During a temporary instance: **isolated read-only**, don't run writes concurrently, close it when done;
+even a stray write can't touch production sessions/storages.
 
 ### Scenario F · New version has problems → rollback (available anytime)
 

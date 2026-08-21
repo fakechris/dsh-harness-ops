@@ -420,9 +420,12 @@ $AB stage --slot a --port 3082 --keep --yes   # 后台跑（nohup），停止用
 - **先检测**：已有 web 实例在跑（如生产 3080）→ 打印警告"第二个实例共享 ~/.dsh，只读查看"；
 - **要求你 `--yes` 明确确认**才启动；不带 `--yes` 直接拒绝并退出；
 - 目标端口被占 → 直接报错让你换 `--port`；
-- `--keep` 后台跑并打印日志路径与停止命令（`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`）。
+- `--keep` 后台跑并打印日志路径与停止命令（`kill $(lsof -tiTCP:<port> -sTCP:LISTEN)`）；
+- **会话/存储隔离**：临时实例通过 `--patch <临时cordis.patch.yml>` 把 `session-persistence-jsonl.root`
+  与 `storage-json.root` 重定向到一个一次性 temp 目录，**永远写不进生产 `~/.dsh`** 的 sessions/storages
+  （2026-08-21 事故：prepare 冒烟起的第二个实例重写了一个活跃会话尾部，导致 seq 回跳、读取器拒读）。
 
-⚠️ 临时实例期间：**只读**，别同时做写操作，看完就关。
+⚠️ 临时实例期间：**隔离只读**，别同时做写操作，看完就关；即使误触也不会碰生产会话/存储。
 
 ### 场景 F · 新版有问题 → 回滚（随时可回）
 

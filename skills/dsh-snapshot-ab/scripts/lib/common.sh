@@ -164,6 +164,32 @@ ab_npm_version() {
   npm view "$pkg" dist-tags."$tag" --registry="$reg" 2>/dev/null || true
 }
 
+# ab_any_ext_outdated <slot> — prints "1" when any configured extension in the
+# slot's profile closure is older than its npm latest, else "". Extensions are
+# installed from their own dist-tag into <slot>/profiles/node_modules (pnpm
+# closure); a release there can change behaviour without the dsh package
+# version moving, and prepare must not early-return past it (2026-08-21:
+# dsh-track 0.6.0 added the session graph the running 0.5.0 lacked).
+ab_any_ext_outdated() {
+  local slot="$1" _e extnpm installed latest
+  [ -n "$slot" ] || { printf ''; return; }
+  while IFS= read -r _e; do
+    [ -n "$_e" ] || continue
+    extnpm=$(printf '%s' "$_e" | jq -r '.npm // ""')
+    if [ -n "$extnpm" ]; then
+      installed=$(node -e "try{console.log(require('$(ab_slot_dir "$slot")/profiles/node_modules/$extnpm/package.json').version)}catch(e){}" 2>/dev/null)
+      latest=$(npm view "$extnpm" dist-tags.latest --registry="$(ab_npm_registry)" 2>/dev/null || true)
+      if [ -n "$installed" ] && [ -n "$latest" ] && [ "$installed" != "$latest" ]; then
+        # stderr: this function is captured via $() — stdout must stay clean
+        ab_err "  extension $extnpm: slot has $installed, npm latest $latest"
+        printf '1'
+        return 0
+      fi
+    fi
+  done < <(ab_config_items '.extensions // [] | .[]')
+  printf ''
+}
+
 # ab_npm_published_at <version> — ISO timestamp when a version was published.
 ab_npm_published_at() {
   local ver pkg reg

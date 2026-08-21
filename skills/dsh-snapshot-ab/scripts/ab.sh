@@ -345,17 +345,27 @@ cmd_prepare_npm() {
   ab_log "preparing slot $slot <- npm $pkg@$version (published ${published:-?})"
 
   # nothing to do if this version is already running or already prepared here
-  local cur_ver cand_phase cand_ver
+  # AND every configured extension is at its npm latest in the current slot.
+  # Extensions resolve from their own dist-tag: a new dsh-track release can
+  # change behaviour while the dsh package version stays put (2026-08-21:
+  # dsh-track 0.6.0 shipped the session-graph feature that the running 0.5.0
+  # lacked; the old early-return skipped the reprepare entirely and the
+  # candidate never picked up the new extension).
+  local cur_ver cand_phase cand_ver ext_updated
   cur_ver=$(ab_slot_version "$cur")
   cand_phase=$(ab_state_get '.phase // "idle"')
   cand_ver=$(ab_state_get '.candidateVersion // ""')
-  if [ "$version" = "$cur_ver" ]; then
-    ab_warn "npm $pkg@$version is the running version; nothing new to prepare"
+  ext_updated=$(ab_any_ext_outdated "$cur")
+  if [ "$version" = "$cur_ver" ] && [ "$ext_updated" != "1" ]; then
+    ab_warn "npm $pkg@$version is the running version and extensions are current; nothing new to prepare"
     return 0
   fi
-  if [ "$cand_phase" = "prepared" ] && [ "$(ab_state_get '.candidate // ""')" = "$slot" ] && [ "$cand_ver" = "$version" ]; then
+  if [ "$cand_phase" = "prepared" ] && [ "$(ab_state_get '.candidate // ""')" = "$slot" ] && [ "$cand_ver" = "$version" ] && [ "$ext_updated" != "1" ]; then
     ab_warn "npm $pkg@$version already prepared in slot $slot — run 'ab.sh verify' instead"
     return 0
+  fi
+  if [ "$ext_updated" = "1" ]; then
+    ab_log "extension update detected (current slot has an outdated extension) — re-preparing slot $slot with the same dsh version"
   fi
 
   dir=$(ab_slot_dir "$slot")

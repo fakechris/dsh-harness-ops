@@ -461,3 +461,28 @@ ab_warn_coexistence() {
   done < <(ab_detect_web)
   [ "$found" = "1" ]
 }
+
+# ab_stage_isolation_patch — create a throwaway cordis.patch.yml that redirects a
+# staging dsh web's session/storage roots away from the shared ~/.dsh state.
+# A second instance (smoke / stage) sharing ~/.dsh is documented as READ-ONLY
+# inspection only; without isolation it can WRITE the production sessions/storages
+# (2026-08-21 incident: a prepare-stage instance re-wrote an active session's tail,
+# producing a seq rewind that the reader rejects). Booting with
+#   bin/dsh --profile web --patch "$(ab_stage_isolation_patch)/cordis.patch.yml"
+# makes the staging instance write to a throwaway dir instead. Echoes the dir
+# path; the caller should `rm -rf` it on teardown (keep it while a kept server
+# runs).
+ab_stage_isolation_patch() {
+  local iso
+  iso="$(mktemp -d -t dsh-ab-iso.XXXXXX)" || return 1
+  mkdir -p "$iso/sessions" "$iso/storages" || return 1
+  cat > "$iso/cordis.patch.yml" <<EOF
+- id: session-persistence-jsonl
+  config:
+    root: $iso/sessions
+- id: storage-json
+  config:
+    root: $iso/storages
+EOF
+  printf '%s\n' "$iso"
+}

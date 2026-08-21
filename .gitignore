@@ -2,6 +2,9 @@ node_modules/
 .DS_Store
 *.log
 
+# session-recovery repair backups (large session logs)
+backups/
+
 # plugin build artifacts
 plugins/*/lib/
 plugins/*/node_modules/

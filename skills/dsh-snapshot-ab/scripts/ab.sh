@@ -871,8 +871,10 @@ ab_restart_web() {
 cmd_stage() {
   # Boot one slot's web on a STAGING port while production keeps running —
   # a second instance sharing ~/.dsh, safe only for read-only inspection.
-  # Coexistence is detected and requires explicit approval (--yes).
-  local slot port
+  # We isolate its session/storage writes to a throwaway dir so it can never
+  # touch the production state (2026-08-21 incident). Coexistence is detected
+  # and requires explicit approval (--yes).
+  local slot port iso
   slot="$FLAG_SLOT"
   [ -n "$slot" ] || ab_die "usage: ab.sh stage --slot a|b [--port N] [--keep]"
   local dir; dir=$(ab_slot_dir "$slot")
@@ -887,15 +889,17 @@ cmd_stage() {
       ab_die "a dsh web instance is already running — a second instance shares ~/.dsh (sessions/storages) and must be READ-ONLY inspection only. Pass --yes to confirm you understand, then it will boot."
     fi
   fi
-  ab_log "booting slot $slot (${dir}) web on http://127.0.0.1:$port — production instance keeps running; this one is READ-ONLY inspection."
+  iso="$(ab_stage_isolation_patch)" || ab_die "failed to create staging isolation patch"
+  ab_log "booting slot $slot (${dir}) web on http://127.0.0.1:$port — production instance keeps running; this one is READ-ONLY inspection (session/storage isolated to $iso)."
   if [ "$FLAG_KEEP" = "1" ]; then
     # shellcheck disable=SC2086
-    ( cd "$dir" && nohup $(ab_boot_cmd "$dir") web --port "$port" >"$AB_SOURCE/web-stage-$slot.log" 2>&1 & echo $! > "$AB_SOURCE/stage-$slot.pid" )
-    ab_ok "staging server up (log $AB_SOURCE/web-stage-$slot.log, pid $(cat "$AB_SOURCE/stage-$slot.pid"))"
+    ( cd "$dir" && nohup $(ab_boot_cmd "$dir") --profile web --patch "$iso/cordis.patch.yml" --no-open --port "$port" >"$AB_SOURCE/web-stage-$slot.log" 2>&1 & echo $! > "$AB_SOURCE/stage-$slot.pid" )
+    printf '%s\n' "$iso" > "$AB_SOURCE/stage-$slot.iso"
+    ab_ok "staging server up (log $AB_SOURCE/web-stage-$slot.log, pid $(cat "$AB_SOURCE/stage-$slot.pid"), isolation dir $iso)"
     ab_log "  stop it: kill \$(lsof -tiTCP:$port -sTCP:LISTEN)   # listener pid may differ from the wrapper"
   else
     # shellcheck disable=SC2086
-    ( cd "$dir" && exec $(ab_boot_cmd "$dir") web --port "$port" )
+    ( cd "$dir" && exec $(ab_boot_cmd "$dir") --profile web --patch "$iso/cordis.patch.yml" --no-open --port "$port" )
   fi
 }
 

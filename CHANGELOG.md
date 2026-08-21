@@ -9,6 +9,17 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+### dsh-session-recovery 兼容 rc.1 + 重复块损坏修复
+
+- `fix(dsh-session-recovery)`: `lib/dsh.mjs` 兼容当前 rc.1 快照 —— persistence
+  类改名（`SessionPersistenceJsonl` → `JsonlSessionPersistence`）、识别 slot
+  profile 布局（`$DSH_HOME/source/current/profiles/node_modules`），修复原脚本
+  `SessionPersistenceJsonl is not a constructor` 问题。
+- `fix(dsh-session-recovery)`: 新增 `repair-session-dedup.mjs` —— 处理「重复事件块
+  导致 seq 不连续 / torn record」的损坏形态（与单帧重压不同）：保留每个 seq 首次
+  出现、丢弃重复，再用 DSH 同款压缩器重新分帧并全量校验后替换；`--dry-run`、
+  失败自动还原。
+
 ### A/B 槽用户配置迁移（key / 模型配置跟随 current）
 
 - `fix(ab)`: 槽级 `.credentials.yaml`（API key）和 `settings.yaml`（模型选择/UI 偏好）

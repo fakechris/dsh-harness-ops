@@ -9,6 +9,31 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+### dsh-snapshot-ab：适配 0.1.5-rc.2 的浏览器 token 鉴权
+
+上游 0.1.5-rc.2 给 `dsh web` 加了**每进程 launch token 鉴权**：只有 `GET /?token=<token>`
+能换到 authority-bound 签名 cookie，裸 `/`（或过期/错 authority 的 cookie）一律 401
+（官方文档明确 "no method-specific loopback tier"，且无参数可关）。原有 gate 全部假设
+「裸 `/` 返 200」，于是对**完全健康**的候选槽给出假阴性：冒烟 180s 拿不到 200、prepare
+失败，而服务器其实已在正常服务。
+
+- `fix(ab)`: 所有 web 探测改为 token-aware —— 从**该服务器自己的日志**取 launch token、
+  用 cookie jar 完成 303 换 cookie、再读首页；老版本不打印 token 时自动退化回原裸 GET，
+  兼容不回滚。
+- `fix(ab)`: staging 实例的 token 只出现在它自己的 mktemp 日志里，`ab_web_token_candidates`
+  只查生产日志永远取不到 → 新增 `ab_web_tokens_for <log>` 显式指定该服务器日志
+  （这是第一次修完仍然失败的原因）。
+- `fix(ab)`: 冒烟/e2e 失败路径只 `kill $pid`，而那是 nohup 子 shell 的 pid、不是 node 的
+  pid，于是留下**孤儿进程占住 staging 端口**，下一次冒烟开局就报端口被占；统一改为
+  `ab_web_kill_port`（`lsof -sTCP:LISTEN` → TERM → SIGKILL）。
+- `fix(ab)`: `ab_web_get` 失败时 `curl -w` 已打印 `000`，`|| echo 000` 再拼一次得到
+  `000000`；改为归一化单个 `000`。
+- `fix(ab)`: `ab_web_wait` 原本用全局变量回传耗时秒数，但命令替换在**子 shell** 中执行、
+  变量到不了调用者（`set -u` 下直接崩）；改为单行输出 `"<code> <secs>"` 供调用方 `read`。
+- `fix(ab)`: client manifest 断言把存放 HTML **内容**的变量当作文件**路径**传给
+  `curl -o`，实际写空文件 → 恒误报 `MISSING`；新增 `ab_web_body` 助手修正语义。
+- `fix(ab)`: `acc_e2e` 补 `--no-open`，验收不再抢占用户浏览器焦点。
+
 ### dsh-session-recovery 兼容 rc.1 + 重复块损坏修复
 
 - `fix(dsh-session-recovery)`: `lib/dsh.mjs` 兼容当前 rc.1 快照 —— persistence

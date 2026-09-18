@@ -721,11 +721,18 @@ cmd_confirm() {
   #   2. the running web process actually comes from the current slot,
   #   3. the `dsh` launcher chain resolves into the current slot,
   #   4. every configured extension client id is in the production boot manifest.
-  local port code cur dir proc html cids cid ok=1 launcher resolved
+  local port code cur dir proc html cids cid ok=1 launcher resolved jar
   port=$(ab_config_get '.web.productionPort // 3080')
   cur=$(ab_current_slot); dir=$(ab_slot_dir "$cur")
   ab_log "production acceptance (confirm gate) on http://127.0.0.1:$port ..."
-  code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "http://127.0.0.1:$port/" 2>/dev/null || echo 000)
+  # 0.1.5-rc.2+ gates the index behind a per-process launch token — a bare GET
+  # answers 401 even when the server is perfectly healthy. Health AND the boot
+  # manifest are therefore read through the token the running server printed
+  # (web.log when ab.sh restarted it, the guard's log when the guard did). On
+  # older versions no token exists and this is the plain GET it always was.
+  jar="$(mktemp -t dsh-ab-confirm-jar.XXXXXX)"
+  html="$(mktemp -t dsh-ab-confirm-html.XXXXXX)"
+  code=$(ab_web_fetch "127.0.0.1" "$port" "$jar" "$html")
   if [ "$code" = "200" ]; then
     ab_ok "  production HTTP 200"
   else
@@ -753,9 +760,8 @@ cmd_confirm() {
   fi
   cids=$(ab_config_get '.web.smokeClientIds // [] | .[]')
   if [ -n "$cids" ]; then
-    html=$(curl -s --max-time 10 "http://127.0.0.1:$port/" 2>/dev/null || true)
     for cid in $cids; do
-      if printf '%s' "$html" | grep -q "\"id\":\"$cid\""; then
+      if grep -q "\"id\":\"$cid\"" "$html" 2>/dev/null; then
         ab_ok "  client manifest: $cid present"
       else
         ab_err "  client manifest: $cid MISSING on production"
@@ -763,6 +769,7 @@ cmd_confirm() {
       fi
     done
   fi
+  rm -f "$jar" "$html" 2>/dev/null || true
   [ "$ok" = "1" ] || ab_die "production acceptance FAILED — do not confirm an unverifiable version; fix the running deployment and re-run confirm"
   local at; at=$(ab_now)
   ab_state_set --arg at "$at" '.confirmed = true | .history += [{ at: $at, action: "confirm" }]'
@@ -853,12 +860,13 @@ ab_restart_web() {
   ab_log "  starting: nohup $(ab_boot_cmd "$boot_dir") web (cwd $cwd, log $log)"
   # shellcheck disable=SC2086
   ( cd "$cwd" && PATH="${node_bin:+$node_bin:}$PATH" nohup env $home_arg $(ab_boot_cmd "$boot_dir") web >"$log" 2>&1 & echo $! > "$AB_SOURCE/web.pid" )
-  i=0; code=000
-  while [ "$i" -lt 180 ]; do
-    code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/" 2>/dev/null || echo 000)
-    [ "$code" = "200" ] && break
-    i=$((i+1)); sleep 1
-  done
+  # The restarted server prints its launch token into the very log this restart
+  # truncated (0.1.5-rc.2+ requires that token to read the index), so the probe
+  # authenticates as soon as the token appears instead of polling a bare `/`
+  # into a 401 for the full 180s and reporting a healthy server as down.
+  local jar; jar="$(mktemp -t dsh-ab-restart-jar.XXXXXX)"
+  read -r code i <<< "$(ab_web_wait "127.0.0.1" "$port" 180 "$jar" "$log")"
+  rm -f "$jar" 2>/dev/null || true
   if [ "$code" = "200" ]; then
     ab_ok "  web UP on http://127.0.0.1:$port after ${i}s"
     return 0

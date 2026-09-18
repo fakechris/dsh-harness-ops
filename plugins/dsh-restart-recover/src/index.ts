@@ -28,6 +28,36 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 export const name = '@fakechris/dsh-restart-recover'
 
+/**
+ * The session event log across upstream API generations.
+ *
+ * 0.1.1-rc.1 exposes the whole log through the `events` getter. 0.1.5-rc.2
+ * removed that getter — reading `events` yields `undefined`, which is what made
+ * `lastTurnInterrupted` throw `Cannot read properties of undefined (reading
+ * 'length')` for every resumed session — and materializes snapshots through
+ * `snapshotEvents()` instead.
+ *
+ * This plugin ships as a profile bundle that must keep working on the rollback
+ * slot as well as on the candidate, so it reads whichever accessor the running
+ * runtime actually provides instead of pinning one upstream version.
+ */
+export interface SessionEventSource {
+  /** Pre-0.1.5 accessor: the whole log, as a getter. */
+  events?: readonly SessionEvent[]
+  /** 0.1.5+ accessor: an immutable snapshot of the log. */
+  snapshotEvents?: () => readonly SessionEvent[]
+}
+
+/**
+ * Read a session's event log on either upstream generation.
+ * @param session - session exposing one of the two accessors.
+ * @returns the event log, or an empty log when neither accessor exists.
+ */
+export function sessionEvents(session: SessionEventSource): readonly SessionEvent[] {
+  if (typeof session.snapshotEvents === 'function') return session.snapshotEvents()
+  return session.events ?? []
+}
+
 /** Plugin configuration. */
 export interface Config {
   /** Enable auto-continuation of interrupted sessions (default true). */
@@ -68,7 +98,9 @@ export function apply(ctx: Context, config?: Config): void {
   const listener = (payload: { agent: Agent }): void => {
     const agent = payload.agent
     try {
-      const events = agent.session.events
+      // Upstream moved the log behind snapshotEvents() in 0.1.5-rc.2; read it
+      // through the adapter so this keeps working on the rollback slot too.
+      const events = sessionEvents(agent.session as unknown as SessionEventSource)
       if (!lastTurnInterrupted(events)) return // normal session, never touch
 
       // cwd filter: only auto-continue sessions in the allowed workspaces.

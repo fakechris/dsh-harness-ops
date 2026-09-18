@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import { lastTurnInterrupted, CONTINUE_MESSAGE, apply } from '../src/index.ts'
+import { lastTurnInterrupted, sessionEvents, CONTINUE_MESSAGE, apply } from '../src/index.ts'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 
 function ev<T extends SessionEvent['type']>(
@@ -140,5 +140,52 @@ describe('apply listener wiring', () => {
     const fakeCtx = { on: vi.fn() }
     apply(fakeCtx as never, { enabled: false })
     expect(fakeCtx.on).not.toHaveBeenCalled()
+  })
+})
+
+describe('sessionEvents adapter (upstream 0.1.5-rc.2)', () => {
+  it('reads the snapshotEvents() accessor when the runtime has it', () => {
+    const log = [ev('turn/start', 0, { turn: 1 })]
+    expect(sessionEvents({ snapshotEvents: () => log })).toBe(log)
+  })
+
+  it('falls back to the pre-0.1.5 `events` getter', () => {
+    const log = [ev('turn/start', 0, { turn: 1 })]
+    expect(sessionEvents({ events: log })).toBe(log)
+  })
+
+  it('returns an empty log when neither accessor exists', () => {
+    expect(sessionEvents({})).toEqual([])
+  })
+
+  it('prefers snapshotEvents() when both are present', () => {
+    const newer = [ev('turn/start', 0, { turn: 1 })]
+    const older = [ev('turn/end', 1, { turn: 1, reason: { kind: 'completed' } })]
+    expect(sessionEvents({ events: older, snapshotEvents: () => newer })).toBe(newer)
+  })
+
+  it('auto-continues a session whose log is only reachable through snapshotEvents()', () => {
+    // The 0.1.5-rc.2 regression itself: `session.events` reads back undefined
+    // there, so the listener threw before it could ever reach followup().
+    let captured: ((payload: { agent: unknown }) => void) | undefined
+    apply({
+      on: (_n: string, l: (p: { agent: unknown }) => void) => {
+        captured = l
+        return () => undefined
+      },
+    } as never)
+
+    const agent = {
+      session: {
+        snapshotEvents: () => [
+          ev('turn/start', 0, { turn: 1 }),
+          ev('turn/end', 1, { turn: 1, reason: { kind: 'interrupted' } }),
+        ],
+        header: { cwd: '/ws', createdAt: 1000 },
+      },
+      followup: vi.fn(),
+    }
+    captured!({ agent: agent as never })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 })

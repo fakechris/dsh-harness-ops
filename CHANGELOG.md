@@ -9,6 +9,21 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+### dsh-restart-recover 适配 0.1.5-rc.2（`Session.events` 被移除）
+
+上游 0.1.5-rc.2 删除了 `Session.events` getter，改用 `snapshotEvents()`（0.1.1-rc.1 仍是
+`get events()`）。插件原先读 `agent.session.events`，在新版上得到 `undefined`，于是
+`lastTurnInterrupted` 对**每个恢复会话**抛
+`TypeError: Cannot read properties of undefined (reading 'length')` —— 自动续接完全失效，
+且只在宿主日志里刷错，前端毫无提示（本次由 AB 轮换的 e2e 门拦下）。
+
+- `fix(dsh-restart-recover)`: 新增 `sessionEvents()` 适配层 —— 运行时提供
+  `snapshotEvents()` 就用它，否则回退到 `events` getter，两者都无则返回空日志。插件是
+  profile bundle，**必须同时在回滚槽（rc.1）和目标槽（rc.2）上工作**，因此不能钉死单一
+  上游版本。
+- `test(dsh-restart-recover)`: 补 5 个单测覆盖两种访问器形态 + 两者同时存在时的优先序，
+  以及"日志只经 `snapshotEvents()` 可达时仍能自动续接"这一回归本身。
+
 ### dsh-snapshot-ab：适配 0.1.5-rc.2 的浏览器 token 鉴权
 
 上游 0.1.5-rc.2 给 `dsh web` 加了**每进程 launch token 鉴权**：只有 `GET /?token=<token>`

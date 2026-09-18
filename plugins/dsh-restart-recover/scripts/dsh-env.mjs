@@ -35,4 +35,12 @@ const result = spawnSync(binPath, args.slice(1), {
   stdio: 'inherit',
   env: { ...process.env, DSH_SOURCE: DSH },
 })
+// A missing checkout or a missing binary in it must say so: spawnSync reports
+// both as a null status, and exiting 1 with no message makes a red build look
+// like a broken test rather than a broken environment.
+if (result.error) {
+  process.stderr.write(`dsh-env: cannot run ${binPath}: ${result.error.message}\n`)
+  process.stderr.write('dsh-env: set DSH_SOURCE to a DSH source checkout that has node_modules installed\n')
+  process.exit(2)
+}
 process.exit(result.status ?? 1)

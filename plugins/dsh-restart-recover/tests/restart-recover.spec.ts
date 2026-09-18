@@ -82,7 +82,7 @@ describe('apply listener wiring', () => {
     // Normal session → no followup.
     const normal = {
       session: {
-        events: [
+        snapshotEvents: () => [
           ev('turn/start', 0, { turn: 1 }),
           ev('turn/end', 1, { turn: 1, reason: { kind: 'completed' } }),
         ],
@@ -96,7 +96,7 @@ describe('apply listener wiring', () => {
     // Interrupted session → followup injected with the continuation message.
     const interrupted = {
       session: {
-        events: [
+        snapshotEvents: () => [
           ev('turn/start', 0, { turn: 1 }),
           ev('user/message', 1, { id: 'm', role: 'user', content: [{ type: 'text', text: 'do X' }], source: { kind: 'user' } }),
           ev('tool/call', 2, { turn: 1, step: 1, callId: 'c1', name: 'bash', arguments: 'ls' }),
@@ -124,7 +124,7 @@ describe('apply listener wiring', () => {
 
     const other = {
       session: {
-        events: [
+        snapshotEvents: () => [
           ev('turn/start', 0, { turn: 1 }),
           ev('turn/end', 1, { turn: 1, reason: { kind: 'interrupted' } }),
         ],
@@ -134,6 +134,32 @@ describe('apply listener wiring', () => {
     }
     captured!({ agent: other as never })
     expect(other.followup).not.toHaveBeenCalled()
+  })
+
+  it('reads events through snapshotEvents and never the removed session.events accessor', () => {
+    let captured: ((payload: { agent: unknown }) => void) | undefined
+    const fakeCtx = {
+      on: (_name: string, listener: (payload: { agent: unknown }) => void) => {
+        captured = listener
+        return () => undefined
+      },
+    }
+    apply(fakeCtx as never)
+    const session = {
+      snapshotEvents: () => [
+        ev('turn/start', 0, { turn: 1 }),
+        ev('turn/end', 1, { turn: 1, reason: { kind: 'interrupted' } }),
+      ],
+      // The accessor that was removed. Touching it must fail the test instead
+      // of being tolerated, because that is the regression this pins.
+      get events(): never {
+        throw new Error('session.events was removed from dsh-session')
+      },
+      header: { cwd: '/ws', createdAt: 1000 },
+    }
+    const agent = { session, followup: vi.fn() }
+    captured!({ agent: agent as never })
+    expect(agent.followup).toHaveBeenCalledTimes(1)
   })
 
   it('disabled config registers no listener', () => {

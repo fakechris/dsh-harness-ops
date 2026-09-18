@@ -68,7 +68,12 @@ export function apply(ctx: Context, config?: Config): void {
   const listener = (payload: { agent: Agent }): void => {
     const agent = payload.agent
     try {
-      const events = agent.session.events
+      // The old public `session.events` accessor is gone (dsh-session 0.1.5-rc.2
+      // exposes no `events` member); reading it yielded undefined and the
+      // `.length` in lastTurnInterrupted threw inside the catch, so the plugin
+      // silently did nothing after every restart. snapshotEvents() is the
+      // supported full-log snapshot.
+      const events = agent.session.snapshotEvents()
       if (!lastTurnInterrupted(events)) return // normal session, never touch
 
       // cwd filter: only auto-continue sessions in the allowed workspaces.

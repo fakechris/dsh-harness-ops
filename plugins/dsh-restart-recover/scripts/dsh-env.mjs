@@ -35,4 +35,13 @@ const result = spawnSync(binPath, args.slice(1), {
   stdio: 'inherit',
   env: { ...process.env, DSH_SOURCE: DSH },
 })
+// A missing binary and a failing command both come back as a null status, and
+// exiting 1 with nothing on either stream makes a broken CHECKOUT look like a
+// broken TEST: the red gate says "the extension is wrong" when the real answer
+// is "this machine has no toolchain at DSH_SOURCE". Name the difference.
+if (result.error) {
+  process.stderr.write('dsh-env: cannot run ' + binPath + ': ' + result.error.message + '\n')
+  process.stderr.write('dsh-env: set DSH_SOURCE to a DSH source checkout with node_modules installed\n')
+  process.exit(2)
+}
 process.exit(result.status ?? 1)

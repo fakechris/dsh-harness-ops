@@ -34,9 +34,9 @@ ab_web_token_from_log() {
 }
 
 # ab_web_token_candidates — tokens we could currently authenticate with, best
-# source first. Production is started either by ab.sh (web.log) or by the
-# launchd guard (its own log, see dsh-web-guard.sh); both are tried because a
-# stale token from a previous process must not mask the live one.
+# source first. Production is started by ab.sh (web.log) or by the DeepSeek
+# Harness GUI; every configured log is tried because a stale token from a
+# previous process must not mask the live one.
 ab_web_token_candidates() {
   {
     local l
@@ -45,7 +45,6 @@ ab_web_token_candidates() {
       ab_web_token_from_log "$l"
     done < <(ab_config_get '.web.authLogs // [] | .[]' 2>/dev/null || true)
     ab_web_token_from_log "$AB_SOURCE/web.log"
-    ab_web_token_from_log "/tmp/dsh-web-guard.log"
   } | awk 'NF && !seen[$0]++'
 }
 

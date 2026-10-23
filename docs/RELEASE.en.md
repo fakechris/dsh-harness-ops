@@ -105,7 +105,7 @@ component uses its own mechanism:
 
 | Component | Type | Distribution/install | Update action |
 |---|---|---|---|
-| `skills/dsh-snapshot-ab`, `dsh-web-guard`, `dsh-session-recovery` | skill | copy into `~/.dsh/skills/` (official scan dir) | re-copy via `install.sh` |
+| `skills/dsh-snapshot-ab`, `dsh-session-recovery`, `dsh-web-doctor` | skill | copy into `~/.dsh/skills/` (official scan dir) | re-copy via `install.sh` |
 | `plugins/dsh-restart-recover` | bundle | `dsh plugin --profile web add @fakechris/dsh-restart-recover@<version>` (published npm artifact) | `update.sh` reinstalls from npm |
 
 The npm tarball includes `lib/`. Production profiles do not use a local `link:`,
@@ -145,7 +145,6 @@ bash scripts/update.sh
 ```sh
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 bash scripts/install.sh          # skills → ~/.dsh/skills + bundle → web profile
-bash skills/dsh-web-guard/scripts/install.sh   # optional: self-healing daemon
 ```
 
 ---

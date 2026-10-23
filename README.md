@@ -8,7 +8,7 @@
 > 构建 + 扩展测试 + web 冒烟全过才原子切换；任何一步失败不动生产，**一键回滚**。升级有退路，
 > 永远有一个验证过的旧版本兜底。
 >
-> **② 开发/运维要重启 web，工作会断吗？** 双层自愈：守护 10 秒内自动拉起 web，agent 从
+> **② 开发/运维要重启 web，工作会断吗？** 自动续接：web 重启后 agent 从
 > **被打断的那一步**自动续接、带着完整上下文继续。重启是**无人值守**的，工作流不被打断。
 >
 > **③ web 彻底起不来、连 agent 都没有了，怎么办？** out-of-band 医生 `dsh-doctor`——纯终端、
@@ -20,13 +20,12 @@
 > | 组件 | 类型 | 管什么 |
 > |---|---|---|
 > | **`skills/dsh-snapshot-ab`** | skill | 官方每日快照 A/B 双槽轮换 —— 升级"切对版本" |
-> | **`skills/dsh-web-guard`** | skill | 自愈守护 —— web 死后 10s 自动拉起 |
 > | **`skills/dsh-session-recovery`** | skill | 会话丢失诊断 —— “0 sessions”/日志损坏时的定位与无损修复 |
 > | **`skills/dsh-web-doctor`** | skill | out-of-band 医生 —— web/A/B 全挂时终端一键诊断→修复→拉起 |
 > | **`plugins/dsh-restart-recover`** | cordis 插件 | 重启续接 —— 被中断的 turn 自动继续 |
 >
 > 合起来回答五个问题：**web 挂了谁拉起？拉起后工作继续吗？会话看起来丢了怎么办？官方发新版本怎么安全切换？A/B 都挂了怎么一键救？**
-> 三者互补：`ab.sh switch/rollback` 杀 web → `dsh-web-guard` 拉起 → `dsh-restart-recover` 续接；
+> 三者互补：`ab.sh switch/rollback` 杀 web → DeepSeek Harness GUI 重新拉起 → `dsh-restart-recover` 续接；
 > 全挂兜底走 `dsh-web-doctor`（终端 `dsh-doctor --fix --restart`）。
 >
 > > 曾用名 `dsh-skill-snapshot-ab`（2026-08-11 更名）—— 仓库从"纯 AB 轮换 skill"长成了
@@ -43,8 +42,6 @@
 dsh-harness-ops（本仓库）
 ├── skills/dsh-snapshot-ab/        AB 轮换：官方快照 A/B 双槽，旧版保底、验收后原子切换
 │   └── scripts/ab.sh              主命令（status/discover/notes/prepare/verify/switch/confirm/rollback）
-├── skills/dsh-web-guard/          自愈守护：launchd/systemd 托管，端口空闲 10s 内拉起 web
-│   └── scripts/install.sh         跨平台安装（macOS launchd / Linux systemd）
 ├── skills/dsh-session-recovery/  会话丢失诊断：0 sessions/日志损坏 → 定位 → 无损修复 → 重启
 │   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
 ├── skills/dsh-web-doctor/        out-of-band 医生：web/A/B 全挂时终端一键诊断→修复→拉起
@@ -202,15 +199,10 @@ bug-fix / simplification / architecture / process / testing，每篇带 `.zh.md`
 ## 1. 安装
 
 ```sh
-# 一键安装：4 个 skill 进 ~/.dsh/skills + dsh-restart-recover bundle 进 web profile
+# 一键安装：3 个 skill 进 ~/.dsh/skills + dsh-restart-recover bundle 进 web profile
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 cd dsh-harness-ops
 bash scripts/install.sh
-
-# 可选：自愈守护（launchd/systemd，web 死后 10s 自动拉起）
-bash skills/dsh-web-guard/scripts/install.sh
-#   v0.3.1 起判活只认 LISTEN 态 socket（-sTCP:LISTEN）——浏览器页面挂着的连接
-#   不会再把端口误判为"被占用"，web 死后守护必定拉起
 
 # 配置（首次会自动读，示例见 skills/dsh-snapshot-ab/references/ab-config.example.json）
 # 通常只需确认 ab-config.json 里的 extensions（包括 dsh-restart-recover）与 web 端口
@@ -379,7 +371,6 @@ $AB status                 # phase=prepared, candidate=b
 ```sh
 $AB switch --yes
 # 输出会显示：CUTOVER → 停旧 web → 起新 web（nohup，日志 ~/.dsh/source/web.log）→ HTTP 200
-# 装了 dsh-web-guard 时：ab.sh 杀 web 后守护会自动拉起新 current（兜底，更可靠）
 ```
 
 **切换后（重启完成，打开 http://127.0.0.1:3080）**：
@@ -540,20 +531,18 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
 4. **单实例原则**：两个槽共享 `~/.dsh`（sessions 是 append-only 共享文件、storages KV 是
    单进程串行写链）——一个生产常驻，另一个槽只在 `stage`/冒烟时短起、只读、看完即关。
 5. **确认窗口**：`switch` 后必须 `confirm` 才允许回收回滚槽；回滚永远可用。
-6. **与 `dsh-web-guard` 配合**：guard 是"带外"自愈守护（launchd/systemd 托管，PPID=1，
-   端口空闲 10s 内拉起）——ab.sh 杀 web 后 guard 自动拉起新 current，无需手动启动；
-   ab.sh 自己启动成功则 guard 不抢。切换/重启后**浏览器硬刷新**才看得到新 client 面板。
+6. **与 web 拉起方配合**：web 由 DeepSeek Harness GUI 拉起（也可由 ab.sh 自己 nohup 起新 current）。
+   切换/重启后**浏览器硬刷新**才看得到新 client 面板。
 
 ## 6. 与相邻项目的关系
 
 - 官方 `dsh-upgrade`：rebase 到上游 master 的整合流程（偶尔用）；本机制是"官方每日快照 +
   扩展外挂"的日常轮换，两者可共存。
-- **`dsh-web-guard`（同仓库的另一个 skill）+ `plugins/dsh-restart-recover`**：完整的重启自愈——
-  AB 切换负责"切对版本"，guard（skill 的守护脚本）负责"重启后必定拉起 web"，restart-recover
-  （cordis 插件）负责"重启后自动继续被中断的 turn"（监听 `agent/created`，注入续接消息，
-  用户零输入）。三者互补：`ab.sh switch/rollback` 杀 web → guard 拉起 → recover 续接。
-  插件从 dsh-track 独立出来（2026-08-11），因为它和 guard 一样是**平台级自愈能力**，
-  不该绑在业务插件 dsh-track 上。
+- **`plugins/dsh-restart-recover`**：重启续接——AB 切换负责"切对版本"，web 由 DeepSeek
+  Harness GUI（或 ab.sh 自己）拉起，restart-recover（cordis 插件）负责"重启后自动继续被中断的
+  turn"（监听 `agent/created`，注入续接消息，用户零输入）。两者互补：`ab.sh switch/rollback`
+  杀 web → GUI 拉起 → recover 续接。插件从 dsh-track 独立出来（2026-08-11），因为它是
+  **平台级自愈能力**，不该绑在业务插件 dsh-track 上。
 - **`dsh-session-recovery`（同仓库 skill，2026-08-11 并入）**：会话丢失的诊断/修复/重启流程，事故复盘见 `skills/dsh-session-recovery/references/incident-20260809-session-loss.md`。
 - 社区 `mainline-compat`（dsh-external-research）：插件 ↔ 当日 mainline 的**兼容性监控/报告**；
   它答"插件还能不能用"，本机制答"怎么安全地切过去"。

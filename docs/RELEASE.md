@@ -83,11 +83,11 @@ npm registry 现状：`@deepseek-ai/*` scope 在 npm 上**无任何包**（`npm 
 
 ### 2.1 回答"每次更新要重新打包吗？"
 
-**不需要手工打包。** 本仓库是**混合仓库**（4 个 skill + 1 个 bundle 插件），各走各的机制：
+**不需要手工打包。** 本仓库是**混合仓库**（3 个 skill + 1 个 bundle 插件），各走各的机制：
 
 | 组件 | 类型 | 分发/安装机制 | 更新动作 |
 |---|---|---|---|
-| `skills/dsh-snapshot-ab`、`dsh-web-guard`、`dsh-session-recovery` | skill | 目录复制到 `~/.dsh/skills/`（官方扫描目录） | `install.sh` 重拷 |
+| `skills/dsh-snapshot-ab`、`dsh-session-recovery`、`dsh-web-doctor` | skill | 目录复制到 `~/.dsh/skills/`（官方扫描目录） | `install.sh` 重拷 |
 | `plugins/dsh-restart-recover` | bundle 插件 | `dsh plugin --profile web add @fakechris/dsh-restart-recover@<version>`（npm 发布物） | `update.sh` 从 npm 重装 |
 
 bundle 插件的 npm tarball 自带 `lib/`。生产 profile 不使用本地 `link:`，避免仓库清理
@@ -122,7 +122,6 @@ bash scripts/update.sh
 ```sh
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 bash scripts/install.sh          # skills → ~/.dsh/skills + bundle → web profile
-bash skills/dsh-web-guard/scripts/install.sh   # 可选：自愈守护
 ```
 
 ---
@@ -138,7 +137,7 @@ bash skills/dsh-web-guard/scripts/install.sh   # 可选：自愈守护
 > cd plugins/dsh-restart-recover && npm publish --registry=https://registry.npmjs.org
 > ```
 > 消费端：`dsh plugin --profile web add @fakechris/dsh-restart-recover`（npm 预构建，无需
-> allowBuilds）。skills（dsh-snapshot-ab / dsh-web-guard / dsh-session-recovery / dsh-web-doctor）
+> allowBuilds）。skills（dsh-snapshot-ab / dsh-session-recovery / dsh-web-doctor）
 > 仍是 `~/.dsh/skills/` 目录机制，不进 npm，走 `bash scripts/install.sh`。
 
 历史理由（保留）：

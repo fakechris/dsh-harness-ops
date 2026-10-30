@@ -17,8 +17,8 @@
  * browser timing races (the frontend `connection/reset` event is too early
  * and cannot see the host agent lifecycle).
  *
- * Pairs with the dsh-web-guard skill: the guard auto-relaunches the web
- * process (launchd/systemd), this plugin continues the interrupted turn.
+ * Pairs with whatever relaunches the web process (the DeepSeek Harness GUI,
+ * or ab.sh switch/rollback): this plugin continues the interrupted turn.
  * @module @fakechris/dsh-restart-recover
  */
 

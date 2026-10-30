@@ -4,12 +4,11 @@ English | [中文](README.md)
 
 > **This repo is DSH's "ops self-healing toolbox"**: it keeps the harness recovering
 > automatically on crash, upgrade, and switchover — no manual intervention. Each of the
-> four components owns one job:
+> three components owns one job:
 >
 > | Component | Type | What it does |
 > |---|---|---|
 > | **`skills/dsh-snapshot-ab`** | skill | Daily upstream-snapshot A/B dual-slot rotation — "switch to the right version" on upgrade |
-> | **`skills/dsh-web-guard`** | skill | Self-healing guard — auto-restarts web within 10s of it dying |
 > | **`skills/dsh-session-recovery`** | skill | Session-loss diagnosis — locate & losslessly repair "0 sessions" / corrupted logs |
 > | **`skills/dsh-web-doctor`** | skill | Out-of-band doctor — one terminal command to diagnose → fix → relaunch when web/A/B are all down |
 > | **`plugins/dsh-restart-recover`** | cordis plugin | Restart continuation — an interrupted turn resumes automatically |
@@ -18,7 +17,7 @@ English | [中文](README.md)
 > continue after restart? What if sessions seem lost? How do we switch versions safely
 > when the official release arrives? How do we rescue a total A/B outage with one
 > command?** They complement each other:
-> `ab.sh switch/rollback` kills web → `dsh-web-guard` brings it back → `dsh-restart-recover` continues the turn;
+> `ab.sh switch/rollback` kills web → the DeepSeek Harness GUI brings it back → `dsh-restart-recover` continues the turn;
 > the last-resort fallback for a total outage is `dsh-web-doctor` (`doctor.sh --fix --restart`).
 >
 > > Formerly `dsh-skill-snapshot-ab` (renamed 2026-08-11) — the repo grew from a
@@ -37,8 +36,6 @@ English | [中文](README.md)
 dsh-harness-ops (this repo)
 ├── skills/dsh-snapshot-ab/        AB rotation: official snapshots in A/B dual slots, old version kept as fallback, atomic switch after acceptance
 │   └── scripts/ab.sh              main command (status/discover/notes/prepare/verify/switch/confirm/rollback)
-├── skills/dsh-web-guard/          self-healing guard: launchd/systemd hosted, brings web up within 10s of a free port
-│   └── scripts/install.sh         cross-platform install (macOS launchd / Linux systemd)
 ├── skills/dsh-session-recovery/   session-loss diagnosis: 0 sessions/corrupted logs → locate → lossless repair → restart
 │   └── scripts/                   validate-sessions / repair-session-log / check-all-sessions / repair-unknown-events
 ├── skills/dsh-web-doctor/        out-of-band doctor: diagnose → fix → relaunch from the terminal when web/A/B are all down
@@ -222,11 +219,6 @@ Convention: `$AB` below means `~/.dsh/skills/dsh-snapshot-ab/scripts/ab.sh` (pre
 git clone https://github.com/dsh-external/dsh-harness-ops.git
 cd dsh-harness-ops
 bash scripts/install.sh
-
-# Optional: self-healing daemon (launchd/systemd, relaunches web ~10s after death)
-bash skills/dsh-web-guard/scripts/install.sh
-#   v0.3.1+: liveness check only counts LISTEN sockets (-sTCP:LISTEN) — a
-#   browser page holding connections no longer blocks the restart
 
 # Configure (auto-read on first run; see skills/dsh-snapshot-ab/references/ab-config.example.json)
 #    Usually you only confirm extensions (including dsh-restart-recover) and the web port
@@ -414,7 +406,6 @@ $AB status                 # phase=prepared, candidate=b
 ```sh
 $AB switch --yes
 # output shows: CUTOVER → stop old web → start new web (nohup, log ~/.dsh/source/web.log) → HTTP 200
-# with dsh-web-guard installed: after ab.sh kills web the guard auto-brings up the new current (fallback, more reliable)
 ```
 
 **After switching (restart done, open http://127.0.0.1:3080)**:
@@ -593,25 +584,22 @@ ln -sfn ~/.dsh/source/current/bin/dsh ~/.local/bin/dsh
    resident, the other slot only briefly started read-only for `stage`/smoke, closed after.
 5. **Confirmation window**: after `switch`, `confirm` is required before the rollback slot
    may be recycled; rollback is always available.
-6. **Cooperating with `dsh-web-guard`**: the guard is an "out-of-band" self-healing daemon
-   (launchd/systemd hosted, PPID=1, brings web up within 10s of a free port) — after ab.sh
-   kills web the guard auto-starts the new current, no manual start needed; if ab.sh itself
-   starts successfully the guard doesn't interfere. After switch/restart **hard-refresh the
-   browser** to see new client panels.
+6. **Cooperating with the web relauncher**: web is brought up by the DeepSeek Harness
+   GUI (or by ab.sh itself, via nohup, for a new current). After switch/restart
+   **hard-refresh the browser** to see new client panels.
 
 ## 6. Relations with adjacent projects
 
 - Official `dsh-upgrade`: the integration flow that rebases onto upstream master
   (occasionally used); this mechanism is the daily rotation of "official daily snapshot +
   external extensions", and the two coexist.
-- **`dsh-web-guard` (another skill in this repo) + `plugins/dsh-restart-recover`**: the
-  complete restart self-healing — AB rotation handles "switching to the right version",
-  guard (the skill's daemon script) handles "web will definitely come up after restart",
+- **`plugins/dsh-restart-recover`**: restart continuation — AB rotation handles "switching to
+  the right version", web is brought up by the DeepSeek Harness GUI (or by ab.sh itself),
   restart-recover (cordis plugin) handles "the interrupted turn continues automatically
   after restart" (listens to `agent/created`, injects a continuation message, zero user
-  input). They complement each other: `ab.sh switch/rollback` kills web → guard brings it
-  up → recover continues. The plugin was separated from dsh-track (2026-08-11) because,
-  like guard, it is a **platform-level self-healing capability** and should not be bound to
+  input). They complement each other: `ab.sh switch/rollback` kills web → GUI brings it
+  up → recover continues. The plugin was separated from dsh-track (2026-08-11) because
+  it is a **platform-level self-healing capability** and should not be bound to
   the business plugin dsh-track.
 - **`dsh-session-recovery` (in-repo skill, absorbed 2026-08-11)**: the session-loss
   diagnose/repair/restart flow; incident retrospective at

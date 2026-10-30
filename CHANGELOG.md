@@ -9,6 +9,40 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-30
+
+**破坏性发布 —— `dsh-web-guard` 守护机制下线。** 本次含移除 skill 的破坏性变更，
+按 SemVer 走 major。同时收录自 0.3.2 以来累计的上游 0.1.5-rc.2 适配、
+`dsh-web-doctor` 结构化重写、A/B 槽用户配置迁移，以及 bundle 插件改为从 npm
+安装已发布产物。
+([#77](https://github.com/dsh-external/dsh-harness-ops/pull/77))
+
+### 移除 `dsh-web-guard` skill（守护机制下线）
+
+DeepSeek Harness GUI 本身就会拉起并管理 `dsh web`（端口 3080），旧的
+`dsh-web-guard` 常驻守护已无存在必要，而且**有害**：
+
+- **自放大循环**：守护每 10 秒检查「3080 有无 LISTEN」，无监听就拉一个 `dsh web`。
+  但 dsh web 要加载整套模块图（dsh-app-boot + cordis + 插件）数秒才绑定端口，
+  检查间隔短于启动耗时 → 上一实例还在启动就被判定「端口空闲」→ 再拉一个。
+  实测 3 分钟内 spawn 17 次，**只有第一个抢到端口，其余全部 EADDRINUSE 崩溃**。
+- **崩溃前吃满内存**：每个崩溃实例在崩之前已把 200-450MB 模块载入内存，
+  十余个并存即 2-3GB，直接把系统压进 swap（实测 swap 达 30GB，磁盘掉到 5.9Gi）。
+- **与 GUI 抢端口**：GUI 自己的 dsh web 因端口被占而启动失败。
+
+- `chore(dsh-web-guard)`: 删除 `skills/dsh-web-guard/`（SKILL.md、scripts/、references/）
+- `chore(install)`: `scripts/install.sh` 不再安装该 skill，也不再提示安装守护
+- `chore(ab)`: `skills/dsh-snapshot-ab/scripts/lib/acceptance.sh` 不再从
+  `/tmp/dsh-web-guard.log` 取 auth token（该日志不再产生）
+- `docs(dsh-restart-recover)`: 插件注释与 npm 包描述改为「与 web 拉起方（GUI / ab.sh）配合」，
+  续接能力本身不变
+- `docs`: README（中/英）、AGENTS.md、docs/RELEASE（中/英）、`dsh-snapshot-ab/SKILL.md`
+  中「守护 10 秒内自动拉起」的描述全部更新为 GUI 拉起
+
+> 保留：`skills/dsh-session-recovery/scripts/restart-dsh-web.sh`（会话恢复流程的
+> 安全重启工具，被 `dsh-web-doctor` 调用，与守护机制无关）、
+> `docs/dsh-tools-runtime-repair*.md` 中对**独立 Windows 仓库** `dsh-web-guard-win` 的引用。
+
 ### dsh-restart-recover 适配 0.1.5-rc.2（`Session.events` 被移除）
 
 上游 0.1.5-rc.2 删除了 `Session.events` getter，改用 `snapshotEvents()`（0.1.1-rc.1 仍是

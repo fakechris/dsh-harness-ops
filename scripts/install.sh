@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # dsh-harness-ops installer — one command to install (or re-install) this
 # toolbox on a machine:
-#   1. copies the four skills into ~/.dsh/skills (the default scan dir),
+#   1. copies the three skills into ~/.dsh/skills (the default scan dir),
 #   2. installs the published dsh-restart-recover bundle into the `web`
-#      profile (via `dsh plugin add`, the official pnpm-backed mechanism),
-#   3. prints a hint for the optional web-guard daemon.
+#      profile (via `dsh plugin add`, the official pnpm-backed mechanism).
 # Idempotent — safe to re-run after every update. Skills come from this git
 # checkout; the bundle is a separately published npm artifact.
 set -euo pipefail
@@ -18,7 +17,7 @@ echo "[dsh-harness-ops] installing v$VERSION from $ROOT"
 # --- 1) skills --------------------------------------------------------------
 mkdir -p "$SKILLS_DST"
 installed=0
-for s in dsh-snapshot-ab dsh-web-guard dsh-session-recovery dsh-web-doctor; do
+for s in dsh-snapshot-ab dsh-session-recovery dsh-web-doctor; do
   src="$ROOT/skills/$s"
   [ -d "$src" ] || { echo "  warn: skill dir missing: $src"; continue; }
   rm -rf "$SKILLS_DST/$s"
@@ -60,13 +59,6 @@ if [ -x "$SKILLS_DST/dsh-web-doctor/scripts/doctor.sh" ]; then
   mkdir -p "$HOME/.local/bin"
   ln -sfn "$SKILLS_DST/dsh-web-doctor/scripts/doctor.sh" "$HOME/.local/bin/dsh-doctor"
   echo "  doctor -> $HOME/.local/bin/dsh-doctor  (usage: dsh-doctor [--fix] [--restart])"
-fi
-
-# --- 4) optional daemon -------------------------------------------------------
-if [ -f "$ROOT/skills/dsh-web-guard/scripts/install.sh" ]; then
-  echo
-  echo "  optional: install the self-healing daemon (launchd/systemd):"
-  echo "    bash $ROOT/skills/dsh-web-guard/scripts/install.sh"
 fi
 
 echo "[dsh-harness-ops] installed v$VERSION — skills are live; restart any running agent to pick up skill catalog changes."

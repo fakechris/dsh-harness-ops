@@ -15,6 +15,7 @@ Each entry links its squash-merged PR.
 按 SemVer 走 major。同时收录自 0.3.2 以来累计的上游 0.1.5-rc.2 适配、
 `dsh-web-doctor` 结构化重写、A/B 槽用户配置迁移，以及 bundle 插件改为从 npm
 安装已发布产物。
+([#77](https://github.com/dsh-external/dsh-harness-ops/pull/77))
 
 ### 移除 `dsh-web-guard` skill（守护机制下线）
 

@@ -9,6 +9,13 @@ Each entry links its squash-merged PR.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-10-30
+
+**破坏性发布 —— `dsh-web-guard` 守护机制下线。** 本次含移除 skill 的破坏性变更，
+按 SemVer 走 major。同时收录自 0.3.2 以来累计的上游 0.1.5-rc.2 适配、
+`dsh-web-doctor` 结构化重写、A/B 槽用户配置迁移，以及 bundle 插件改为从 npm
+安装已发布产物。
+
 ### 移除 `dsh-web-guard` skill（守护机制下线）
 
 DeepSeek Harness GUI 本身就会拉起并管理 `dsh web`（端口 3080），旧的

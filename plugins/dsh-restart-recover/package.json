@@ -1,7 +1,7 @@
 {
   "name": "@fakechris/dsh-restart-recover",
   "description": "Restart recovery for dsh web: after a crash/restart, an interrupted agent turn continues automatically (host-side agent/created listener — no browser timing races). Works with whatever relaunches the web process (DeepSeek Harness GUI, ab.sh switch/rollback); together they make restart self-healing.",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
